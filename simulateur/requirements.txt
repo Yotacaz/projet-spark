@@ -1,0 +1,10 @@
+# ============================================================
+# Dépendances — Simulateur de Flux d'Événements Big Data
+# ============================================================
+# Installation : pip install -r requirements.txt
+# Python requis : >= 3.9 (type hints list[str], dict[str, ...])
+# ============================================================
+
+# Génération de données réalistes (villes, noms, etc.)
+# https://faker.readthedocs.io/
+faker>=24.0.0
