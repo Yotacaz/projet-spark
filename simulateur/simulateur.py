@@ -359,11 +359,36 @@ def lancer_simulateur(
     pool_users, pool_products, catalogue = construire_catalogue()
 
     # ── 2. Configuration du writer selon le mode ──────────────────────────
+    # Spark ne lit qu'une seule fois un fichier
+    # Cette modification genere plusieurs fichiers
     if mode == "file":
-        writer = creer_writer_fichier(dossier_sortie)
+        os.makedirs(dossier_sortie, exist_ok=True)
+        
+        # Tampon en mémoire pour regrouper les événements
+        tampon_events = []
+        # On définit un intervalle de flush (ex: toutes les 5 secondes)
+        INTERVALLE_FLUSH_SECONDES = 5
+        dernier_flush = time.time()
+
         def emettre(ligne: str) -> None:
-            """Écrit la ligne JSON dans le fichier rotatif."""
-            writer.info(ligne)
+            """Accumule les lignes JSON et les écrit par blocs uniques."""
+            nonlocal dernier_flush
+            tampon_events.append(ligne)
+            
+            # Si l'intervalle est écoulé ou que le tampon devient grand, on écrit le fichier
+            if (time.time() - dernier_flush) >= INTERVALLE_FLUSH_SECONDES or len(tampon_events) >= 1000:
+                if tampon_events:
+                    # Nom unique basé sur le timestamp précis
+                    ts = int(time.time() * 1000)
+                    nom_fichier = f"events_batch_{ts}.json"
+                    chemin_complet = os.path.join(dossier_sortie, nom_fichier)
+                    
+                    # Écriture d'un seul bloc propre pour Spark
+                    with open(chemin_complet, "w", encoding="utf-8") as f:
+                        f.write("\n".join(tampon_events) + "\n")
+                    
+                    tampon_events.clear()
+                dernier_flush = time.time()
     else:
         def emettre(ligne: str) -> None:
             """Écrit la ligne JSON sur stdout avec flush immédiat."""
