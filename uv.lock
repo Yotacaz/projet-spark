@@ -3,15 +3,28 @@ revision = 3
 requires-python = ">=3.11.3"
 
 [[package]]
+name = "kafka-python"
+version = "3.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/14/7a/f24fb0257e50a67288a4241122b6e03a4ad4f8b17f30bcfee58054c043ff/kafka_python-3.0.0.tar.gz", hash = "sha256:c9bf82fdf8a6d9aae12b3ab1f86968d88080b96bb71e1c6184ec3a2239b6c6d4", size = 492594, upload-time = "2026-06-11T23:06:15.831Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/da/7e/a98147549d743f1a25584158a13f5a18202e7ee2c017d5977d9c4f62dcea/kafka_python-3.0.0-py3-none-any.whl", hash = "sha256:d5fd1d3ebb0fcdc24c32bdbeb0b59812fe0cfbe395502584ce53f11742b8649d", size = 603608, upload-time = "2026-06-11T23:06:17.425Z" },
+]
+
+[[package]]
 name = "projet-spark"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "kafka-python" },
     { name = "pyspark" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pyspark", specifier = "==3.5.1" }]
+requires-dist = [
+    { name = "kafka-python", specifier = ">=3.0.0" },
+    { name = "pyspark", specifier = "==3.5.1" },
+]
 
 [[package]]
 name = "py4j"
