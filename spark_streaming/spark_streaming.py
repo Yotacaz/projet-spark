@@ -3,7 +3,6 @@ import sys
 
 #----! Adapter ceci pour votre machine ou retirer le !-----#
 # Force Java 17
-
 os.environ["PYSPARK_PYTHON"] = sys.executable
 os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
 
@@ -19,11 +18,17 @@ if sys.platform == "win32":
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_json, col, window, count, sum as spark_sum
-from pyspark.sql.types import *
+from pyspark.sql.types import (
+    StructType, StructField,
+    StringType, DoubleType, TimestampType,
+)
 
 spark = SparkSession.builder \
     .appName("MarketplaceKafka") \
     .config("spark.sql.shuffle.partitions", "4") \
+    .config("spark.jars.packages",
+            "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,"
+            "graphframes:graphframes:0.8.3-spark3.5-s_2.12") \
     .getOrCreate()
 
 # ── Schéma identique à ce que generer_evenement() produit ───────────────────
@@ -55,11 +60,12 @@ df_parsed = df_raw \
     .withColumn("timestamp", col("timestamp").cast(TimestampType()))
 
 # ── Watermark + fenêtrage ────────────────────────────────────────────────────
-df_wm = df_parsed.withWatermark("timestamp", "10 minutes")
+df_wm = df_parsed.withWatermark("timestamp", "1 minute")
 
+# Fenêtres de regroupement réduites à 1 minute
 agg = df_wm \
     .groupBy(
-        window(col("timestamp"), "5 minutes"),
+        window(col("timestamp"), "1 minute"),
         col("action_type")
     ) \
     .agg(
@@ -67,20 +73,22 @@ agg = df_wm \
         spark_sum("price").alias("chiffre_affaires")
     )
 
-# ── foreachBatch → GraphFrames ───────────────────────────────────────────────
+# ── 2. foreachBatch → GraphFrames & Export Kafka ──────────────────────────────
 from graphframes import GraphFrame
 
 def process_batch(batch_df, epoch_id):
     if batch_df.isEmpty():
         return
 
-    from pyspark.sql.functions import lit
+    from pyspark.sql.functions import lit, to_json, struct
 
+    # Construction des Vertices (Nœuds)
     vertices = batch_df.select(col("user_id").alias("id"), lit("USER").alias("type")) \
         .union(batch_df.select(col("product_id").alias("id"), lit("PROD").alias("type"))) \
         .union(batch_df.select(col("seller_id").alias("id"),  lit("SEL").alias("type"))) \
         .dropDuplicates(["id"])
 
+    # Construction des Edges (Arêtes)
     edges = batch_df.select(
         col("user_id").alias("src"),
         col("product_id").alias("dst"),
@@ -88,17 +96,34 @@ def process_batch(batch_df, epoch_id):
     )
 
     g = GraphFrame(vertices, edges)
-    g.inDegrees.show(5)
+    print(f"\n--- [Batch {epoch_id}] Top 5 Produits les plus populaires ---")
+    g.inDegrees.orderBy(col("inDegree").desc()).show(5)
 
-# ── Lancement des deux queries en parallèle ──────────────────────────────────
+    # Spark demande obligatoirement une colonne 'value' contenant le JSON string
+    vertices.selectExpr("id AS key", "to_json(struct(*)) AS value") \
+        .write \
+        .format("kafka") \
+        .option("kafka.bootstrap.servers", "localhost:9092") \
+        .option("topic", "graph-vertices") \
+        .save()
+
+    edges.selectExpr("src AS key", "to_json(struct(*)) AS value") \
+        .write \
+        .format("kafka") \
+        .option("kafka.bootstrap.servers", "localhost:9092") \
+        .option("topic", "graph-edges") \
+        .save()
+
+# ── 3. Lancement des Queries en Mode "Update" ───────────────────────────────
+
 q1 = agg.writeStream \
-    .outputMode("append") \
+    .outputMode("update") \
     .format("console") \
-    .option("truncate", False) \
+    .option("truncate", "false") \
     .trigger(processingTime="10 seconds") \
     .start()
 
-q2 = df_wm.writeStream \
+q2 = df_parsed.writeStream \
     .foreachBatch(process_batch) \
     .trigger(processingTime="10 seconds") \
     .start()

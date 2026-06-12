@@ -23,13 +23,17 @@ Producteur JSON           PySpark Structured       Visualisation
 
 ```bash
 
+## DOCKER 
+# 0. lancer docker desktop
+# 1. dans un terminal dedier:
+docker-compose up
 
-# 1. Lancer le simulateur (stdout)
+# 2. Lancer le simulateur
 python simulateur/simulateur.py
 
-# 2. Lancer en mode fichier (pour Spark)
-python simulateur/simulateur.py --mode file --output-dir /data/stream
-```
+# 3. Lancer spark_streaming
+python spark_streaming/spark_streaming.py
+
 
 ## Schéma des événements
 
@@ -77,8 +81,3 @@ export PATH=$JAVA_HOME/bin:$PATH
 export SPARK_LOCAL_IP=127.0.0.1
 ```
 
-## DOCKER 
- lancer docker desktop
- dans un terminal dedier:
-
-  > docker-compose up -d
