@@ -44,6 +44,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
+from kafka import KafkaProducer
 
 # ── Gestion propre du SIGPIPE (Unix uniquement) ─────────────────────────────
 # Quand le script est utilisé dans un pipe (ex: | head -5), le consommateur
@@ -139,6 +140,8 @@ DELAI_MAX: float = 2.0
 # ------------------------------------------------------------------
 FICHIER_MAX_OCTETS: int = 10 * 1024 * 1024   # rotation après 10 Mo
 FICHIER_BACKUP:     int = 5                   # 5 archives conservées
+
+RATE = 2.0
 
 
 # ==============================================================================
@@ -278,57 +281,24 @@ def generer_evenement(
         "price":       infos["price"],
     }
 
-
 # ==============================================================================
-# CONFIGURATION DE LA SORTIE (stdout ou fichiers rotatifs)
+# CONFIGURATION DE LA SORTIE (kafka producer)
 # ==============================================================================
 
-def creer_writer_fichier(dossier: str) -> logging.Logger:
-    """
-    Configure un logger dédié à l'écriture dans des fichiers JSON rotatifs.
+def _serialiser_valeur(v: dict) -> bytes:
+    return json.dumps(v, ensure_ascii=False).encode("utf-8")
 
-    Structure générée :
-        {dossier}/evenements.json        ← fichier actif (en cours d'écriture)
-        {dossier}/evenements.json.1      ← archive la plus récente
-        ...
-        {dossier}/evenements.json.5      ← archive la plus ancienne
+def _serialiser_cle(k: str) -> bytes:
+    return k.encode("utf-8")
 
-    Intégration Spark Structured Streaming :
-        spark.readStream \\
-             .format("json") \\
-             .schema(schema) \\
-             .load("{dossier}/")
-
-    Args:
-        dossier (str): Chemin du dossier de sortie (créé si inexistant).
-
-    Returns:
-        logging.Logger: Logger configuré avec RotatingFileHandler.
-    """
-    os.makedirs(dossier, exist_ok=True)
-    chemin = os.path.join(dossier, "evenements.json")
-
-    # Logger isolé (propagate=False) pour ne pas polluer le logger principal
-    writer = logging.getLogger("json_file_writer")
-    writer.setLevel(logging.DEBUG)
-    writer.propagate = False
-
-    handler = RotatingFileHandler(
-        filename=chemin,
-        maxBytes=FICHIER_MAX_OCTETS,
-        backupCount=FICHIER_BACKUP,
-        encoding="utf-8",
+def creer_producteur_kafka(bootstrap_servers="localhost:9092"):
+    return KafkaProducer(
+        bootstrap_servers=bootstrap_servers,
+        value_serializer=_serialiser_valeur,
+        key_serializer=_serialiser_cle,
+        linger_ms=10,
+        acks="all",
     )
-    # Format brut : une ligne JSON sans aucun préfixe de log
-    handler.setFormatter(logging.Formatter("%(message)s"))
-    writer.addHandler(handler)
-
-    _logger.info(
-        f"Mode fichier activé → {chemin} "
-        f"(rotation à {FICHIER_MAX_OCTETS // 1_048_576} Mo, "
-        f"{FICHIER_BACKUP} archives)"
-    )
-    return writer
 
 
 # ==============================================================================
@@ -361,38 +331,7 @@ def lancer_simulateur(
     # ── 2. Configuration du writer selon le mode ──────────────────────────
     # Spark ne lit qu'une seule fois un fichier
     # Cette modification genere plusieurs fichiers
-    if mode == "file":
-        os.makedirs(dossier_sortie, exist_ok=True)
-        
-        # Tampon en mémoire pour regrouper les événements
-        tampon_events = []
-        # On définit un intervalle de flush (ex: toutes les 5 secondes)
-        INTERVALLE_FLUSH_SECONDES = 5
-        dernier_flush = time.time()
-
-        def emettre(ligne: str) -> None:
-            """Accumule les lignes JSON et les écrit par blocs uniques."""
-            nonlocal dernier_flush
-            tampon_events.append(ligne)
-            
-            # Si l'intervalle est écoulé ou que le tampon devient grand, on écrit le fichier
-            if (time.time() - dernier_flush) >= INTERVALLE_FLUSH_SECONDES or len(tampon_events) >= 1000:
-                if tampon_events:
-                    # Nom unique basé sur le timestamp précis
-                    ts = int(time.time() * 1000)
-                    nom_fichier = f"events_batch_{ts}.json"
-                    chemin_complet = os.path.join(dossier_sortie, nom_fichier)
-                    
-                    # Écriture d'un seul bloc propre pour Spark
-                    with open(chemin_complet, "w", encoding="utf-8") as f:
-                        f.write("\n".join(tampon_events) + "\n")
-                    
-                    tampon_events.clear()
-                dernier_flush = time.time()
-    else:
-        def emettre(ligne: str) -> None:
-            """Écrit la ligne JSON sur stdout avec flush immédiat."""
-            print(ligne, flush=True)
+    producer = creer_producteur_kafka()
 
     # ── 3. Affichage du bandeau de démarrage (stderr) ─────────────────────
     sep = "━" * 58
@@ -414,30 +353,14 @@ def lancer_simulateur(
 
     try:
         while True:
-            # Génération de l'événement
-            evenement = generer_evenement(pool_users, pool_products, catalogue)
+            event = generer_evenement(pool_users, pool_products, catalogue)
 
-            # Sérialisation JSON mono-ligne (Newline-Delimited JSON — NDJSON)
-            ligne_json = json.dumps(evenement, ensure_ascii=False)
-
-            # Émission sur la sortie configurée
-            emettre(ligne_json)
-
-            # Mise à jour des compteurs internes
-            compteur += 1
-            if evenement["action_type"] == "ACHAT":
-                compteur_achats += 1
-
-            # Log de diagnostic toutes les 100 lignes (sur stderr)
-            if compteur % 100 == 0:
-                taux = (compteur_achats / compteur) * 100
-                _logger.info(
-                    f"{compteur:6d} événements émis  │  "
-                    f"Achats : {compteur_achats:4d} ({taux:.1f}%)"
-                )
-
-            # Délai aléatoire — simule les fluctuations naturelles du trafic
-            time.sleep(random.uniform(DELAI_MIN, DELAI_MAX))
+            producer.send(
+                topic="marketplace-events",
+                key=event["action_type"],
+                value=event,
+            )
+            time.sleep(1 / RATE)
 
     except KeyboardInterrupt:
         # Arrêt propre : récapitulatif final sur stderr
