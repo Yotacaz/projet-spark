@@ -1,1 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+.env
+
+# Données de streaming (générées à l'exécution, pas à versionner)
+logs_simulateur/
+data/stream/
+*.json.1
+*.json.2
+*.json.3
+*.json.4
+*.json.5
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# macOS
+.DS_Store
+
+# Spark
+derby.log
+metastore_db/
+spark-warehouse/
+
 perso
