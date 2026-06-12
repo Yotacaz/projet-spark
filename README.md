@@ -77,3 +77,8 @@ export PATH=$JAVA_HOME/bin:$PATH
 export SPARK_LOCAL_IP=127.0.0.1
 ```
 
+## DOCKER 
+ lancer docker desktop
+ dans un terminal dedier:
+
+  > docker-compose up -d
