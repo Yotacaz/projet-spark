@@ -1,0 +1,26 @@
+[
+    {
+        "user_id": "U1",
+        "product_id": "P1",
+        "seller_id": "S1",
+        "action_type": "LIKE"
+    },
+    {
+        "user_id": "U2",
+        "product_id": "P1",
+        "seller_id": "S1",
+        "action_type": "PURCHASE"
+    },
+    {
+        "user_id": "U3",
+        "product_id": "P2",
+        "seller_id": "S2",
+        "action_type": "INTENT"
+    },
+    {
+        "user_id": "U1",
+        "product_id": "P2",
+        "seller_id": "S2",
+        "action_type": "LIKE"
+    }
+]
