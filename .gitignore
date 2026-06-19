@@ -38,3 +38,4 @@ metastore_db/
 spark-warehouse/
 
 perso
+delta

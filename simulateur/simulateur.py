@@ -59,7 +59,7 @@ if hasattr(signal, "SIGPIPE"):
 try:
     from faker import Faker            # noqa: F401  (import de vérification)
     FAKER_OK = True
-except ImportError:
+except ImportError: 
     FAKER_OK = False
 
 

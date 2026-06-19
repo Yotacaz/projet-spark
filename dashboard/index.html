@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Graph Explorer — Marketplace</title>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<style>
+/* ── Reset & base ───────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: #111;
+  color: #e0e0e0;
+  overflow: hidden;
+}
+
+/* ── Layout ─────────────────────────────────────────────────────────── */
+#app {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ── Sidebar ────────────────────────────────────────────────────────── */
+#sidebar {
+  width: 340px;
+  min-width: 340px;
+  background: #1a1a1a;
+  border-right: 2px solid #333;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  z-index: 10;
+}
+
+#sidebar::-webkit-scrollbar { width: 6px; }
+#sidebar::-webkit-scrollbar-track { background: #1a1a1a; }
+#sidebar::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+.sidebar-header {
+  padding: 18px 16px 12px;
+  border-bottom: 2px solid #333;
+  background: #1f1f1f;
+}
+
+.sidebar-header h1 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.3px;
+}
+
+.sidebar-header .subtitle {
+  font-size: 12px;
+  color: #888;
+  margin-top: 2px;
+}
+
+.sidebar-section {
+  padding: 12px 16px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.sidebar-section h2 {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+/* ── Stats ──────────────────────────────────────────────────────────── */
+.stat-row {
+  display: flex;
+  gap: 12px;
+}
+
+.stat-card {
+  flex: 1;
+  background: #252525;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 8px 12px;
+  text-align: center;
+}
+
+.stat-card .value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.stat-card .label {
+  font-size: 10px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 16px;
+  border: 2px solid #444;
+  border-radius: 6px;
+  background: #252525;
+  color: #e0e0e0;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.btn:hover {
+  background: #333;
+  border-color: #666;
+}
+
+.btn-primary {
+  background: #2d7d46;
+  border-color: #3a9d56;
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: #3a9d56;
+  border-color: #4dbd6a;
+}
+
+.btn-secondary {
+  background: #2a4a7a;
+  border-color: #3560a0;
+  color: #fff;
+}
+
+.btn-secondary:hover {
+  background: #3560a0;
+  border-color: #4070b0;
+}
+
+.btn-danger {
+  background: #6b2a2a;
+  border-color: #8a3535;
+  color: #fff;
+}
+
+.btn-danger:hover {
+  background: #8a3535;
+  border-color: #a04040;
+}
+
+.btn-group {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-group .btn { flex: 1; }
+
+/* ── Form elements ──────────────────────────────────────────────────── */
+label {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  margin-top: 8px;
+}
+
+label:first-child { margin-top: 0; }
+
+input, select {
+  width: 100%;
+  padding: 8px 10px;
+  background: #0d0d0d;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #e0e0e0;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+input:focus, select:focus {
+  border-color: #4dbd6a;
+}
+
+input::placeholder { color: #555; }
+
+.form-row {
+  display: flex;
+  gap: 8px;
+}
+
+.form-row > * { flex: 1; }
+
+/* ── Search datalist wrapper ────────────────────────────────────────── */
+.search-row {
+  position: relative;
+}
+
+.search-row input {
+  padding-right: 32px;
+}
+
+.search-row .search-icon {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #555;
+  font-size: 14px;
+  pointer-events: none;
+}
+
+/* ── Info panel ─────────────────────────────────────────────────────── */
+#info-panel {
+  background: #0d0d0d;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 10px 12px;
+  min-height: 40px;
+  font-size: 13px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+#info-panel .info-empty {
+  color: #555;
+  font-style: italic;
+}
+
+#info-panel .info-title {
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+#info-panel .info-key {
+  color: #888;
+}
+
+#info-panel .info-val {
+  color: #4dbd6a;
+}
+
+/* ── Legend ──────────────────────────────────────────────────────────── */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #bbb;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.2);
+}
+
+.legend-line {
+  width: 20px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+/* ── Graph container ────────────────────────────────────────────────── */
+#graph-container {
+  flex: 1;
+  position: relative;
+  background: #111;
+}
+
+#graph-container .loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(17,17,17,0.85);
+  z-index: 20;
+  font-size: 16px;
+  color: #888;
+  transition: opacity 0.3s;
+}
+
+#graph-container .loading-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#network {
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Active filters badge ───────────────────────────────────────────── */
+.filter-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: #2a4a7a;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #8ab4f8;
+}
+
+.filter-badge .remove {
+  cursor: pointer;
+  color: #666;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.filter-badge .remove:hover { color: #f88; }
+
+/* ── Responsive ─────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  #sidebar {
+    width: 100%;
+    min-width: unset;
+    max-height: 40vh;
+    border-right: none;
+    border-bottom: 2px solid #333;
+  }
+  #app { flex-direction: column; }
+}
+
+/* ── Vis-network overrides ──────────────────────────────────────────── */
+.vis-tooltip {
+  background: #1f1f1f !important;
+  border: 1px solid #444 !important;
+  border-radius: 6px !important;
+  color: #e0e0e0 !important;
+  font-family: 'Segoe UI', sans-serif !important;
+  font-size: 13px !important;
+  padding: 8px 12px !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.6) !important;
+  line-height: 1.5 !important;
+  max-width: 300px !important;
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ─── Sidebar ─────────────────────────────────────────────────── -->
+  <div id="sidebar">
+    <div class="sidebar-header">
+      <h1>🔗 Graph Explorer</h1>
+      <div class="subtitle">Marketplace Interaction Graph</div>
+    </div>
+
+    <!-- Stats -->
+    <div class="sidebar-section">
+      <div class="stat-row">
+        <div class="stat-card">
+          <div class="value" id="stat-vertices">—</div>
+          <div class="label">Nodes</div>
+        </div>
+        <div class="stat-card">
+          <div class="value" id="stat-edges">—</div>
+          <div class="label">Edges</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="sidebar-section">
+      <h2>Actions</h2>
+      <button class="btn btn-primary" onclick="loadBestEdges()">🏆 Best Edges</button>
+      <div class="form-row" style="margin-top:8px;align-items:end;">
+        <div style="flex:1;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <label for="auto-refresh-toggle" style="margin:0;cursor:pointer;">Auto-refresh</label>
+            <input id="auto-refresh-toggle" type="checkbox" onchange="onAutoRefreshToggle()" style="width:16px;height:16px;accent-color:#4dbd6a;">
+          </div>
+        </div>
+        <div style="flex:0 0 80px;">
+          <select id="auto-refresh-interval" onchange="onAutoRefreshIntervalChange()" style="font-size:11px;padding:6px;">
+            <option value="5000">5s</option>
+            <option value="10000" selected>10s</option>
+            <option value="30000">30s</option>
+            <option value="60000">60s</option>
+          </select>
+        </div>
+      </div>
+      <div id="auto-refresh-status" style="font-size:11px;color:#555;margin-top:4px;"></div>
+    </div>
+
+    <!-- Node search -->
+    <div class="sidebar-section">
+      <h2>Search Node</h2>
+      <div class="search-row">
+        <input
+          id="node-search"
+          type="text"
+          placeholder="Type node ID…"
+          list="node-suggestions"
+          autocomplete="off"
+          oninput="onNodeSearchInput(this.value)"
+          onkeydown="if(event.key==='Enter')onNodeSearch()"
+        >
+        <datalist id="node-suggestions"></datalist>
+        <span class="search-icon">🔍</span>
+      </div>
+      <div class="form-row" style="margin-top:6px;">
+        <div>
+          <label>Hops</label>
+          <select id="node-hops">
+            <option value="1">1 (direct)</option>
+            <option value="2">2</option>
+            <option value="3" selected>3</option>
+          </select>
+        </div>
+        <div>
+          <label>Max edges</label>
+          <input id="node-max-edges" type="number" value="200" min="10" step="10">
+        </div>
+      </div>
+      <div style="margin-top:8px;">
+        <label>Min score</label>
+        <input id="node-min-score" type="number" value="" placeholder="None" step="1">
+      </div>
+      <button class="btn btn-secondary" style="margin-top:8px;" onclick="onNodeSearch()">Load Node</button>
+    </div>
+
+    <!-- Edge lookup -->
+    <div class="sidebar-section">
+      <h2>Search Edge</h2>
+      <div class="form-row">
+        <div>
+          <label>Source</label>
+          <input id="edge-src" type="text" placeholder="src node ID">
+        </div>
+        <div>
+          <label>Target</label>
+          <input id="edge-dst" type="text" placeholder="dst node ID">
+        </div>
+      </div>
+      <div class="form-row" style="margin-top:6px;">
+        <div>
+          <label>Hops</label>
+          <select id="edge-hops">
+            <option value="1" selected>1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+          </select>
+        </div>
+        <div>
+          <label>Max edges</label>
+          <input id="edge-max-edges" type="number" value="200" min="10" step="10">
+        </div>
+      </div>
+      <button class="btn btn-secondary" style="margin-top:8px;" onclick="onEdgeSearch()">Load Edge</button>
+    </div>
+
+    <!-- Active filters / info -->
+    <div class="sidebar-section">
+      <h2>Selection</h2>
+      <div id="info-panel">
+        <span class="info-empty">Click a node or edge on the graph, or use the search above.</span>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="sidebar-section" style="border-bottom:none;">
+      <h2>Legend</h2>
+      <div class="legend">
+        <div class="legend-item"><span class="legend-dot" style="background:#4fc3f7;"></span> USER</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#ffb74d;"></span> PROD</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#e57373;"></span> SEL</div>
+        <div class="legend-item"><span class="legend-line" style="background:#4dbd6a;"></span> AIME</div>
+        <div class="legend-item"><span class="legend-line" style="background:#ff9800;"></span> VOUT</div>
+        <div class="legend-item"><span class="legend-line" style="background:#f44336;"></span> ACHAT</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Graph ────────────────────────────────────────────────────── -->
+  <div id="graph-container">
+    <div class="loading-overlay" id="loading-overlay">⏳ Loading graph data…</div>
+    <div id="network"></div>
+  </div>
+
+</div>
+
+<script>
+// ─── Configuration ──────────────────────────────────────────────────────
+const COLORS = {
+  USER: { background: '#4fc3f7', border: '#4fc3f7' },
+  PROD: { background: '#ffb74d', border: '#ffb74d' },
+  SEL:  { background: '#e57373', border: '#e57373' },
+};
+
+const EDGE_COLORS = {
+  AIME:  '#4dbd6a',
+  VOUT:  '#ff9800',
+  ACHAT: '#f44336',
+};
+
+const DEFAULT_EDGE_COLOR = '#666';
+
+// ─── State ──────────────────────────────────────────────────────────────
+let network = null;
+let nodesDataSet = new vis.DataSet([]);
+let edgesDataSet = new vis.DataSet([]);
+let currentGraphData = null; // raw API response for reference
+let searchTimeout = null;
+let autoRefreshTimer = null;
+let currentView = null; // { mode: 'best-edges' | 'node' | 'edge', params: {} }
+
+// ─── Initialize vis-network ──────────────────────────────────────────────
+function initNetwork() {
+  const container = document.getElementById('network');
+  const options = {
+    nodes: {
+      shape: 'dot',
+      size: 12,
+      font: {
+        color: '#ccc',
+        size: 11,
+        face: 'Segoe UI, system-ui, sans-serif',
+        strokeWidth: 0,
+      },
+      borderWidth: 2,
+      shadow: { enabled: true, size: 4, x: 0, y: 2 },
+    },
+    edges: {
+      arrows: { to: { enabled: true, scaleFactor: 0.6 } },
+      smooth: { type: 'curvedCW', roundness: 0.15 },
+      font: {
+        color: '#888',
+        size: 10,
+        strokeWidth: 0,
+        align: 'middle',
+      },
+      width: 1,
+      hoverWidth: 2,
+      selectionWidth: 2,
+    },
+    physics: {
+      solver: 'barnesHut',
+      barnesHut: {
+        gravitationalConstant: -4000,
+        centralGravity: 0.3,
+        springLength: 120,
+        springConstant: 0.04,
+        damping: 0.09,
+      },
+      stabilization: { iterations: 250 },
+    },
+    interaction: {
+      hover: true,
+      tooltipDelay: 200,
+      navigationButtons: false,
+      keyboard: { enabled: true },
+    },
+    manipulation: { enabled: false },
+  };
+
+  network = new vis.Network(container, { nodes: nodesDataSet, edges: edgesDataSet }, options);
+
+  // ── Click node ──────────────────────────────────────────────────
+  network.on('click', function (params) {
+    if (params.nodes.length > 0) {
+      const nodeId = params.nodes[0];
+      showNodeInfo(nodeId);
+      // Highlight node's neighbors
+      highlightNodeNeighborhood(nodeId);
+    } else if (params.edges.length > 0) {
+      const edgeId = params.edges[0];
+      const edge = edgesDataSet.get(edgeId);
+      if (edge) {
+        showEdgeInfo(edge.from, edge.to);
+        highlightEdge(edgeId);
+      }
+    } else {
+      clearHighlight();
+      showDefaultInfo();
+    }
+  });
+
+  // ── Hover node tooltip ──────────────────────────────────────────
+  network.on('hoverNode', function (params) {
+    const nodeId = params.node;
+    const node = nodesDataSet.get(nodeId);
+    if (!node) return;
+    const type = node._type || 'unknown';
+    const degree = node._degree !== undefined ? node._degree : '?';
+    network.options.nodes.font = {
+      ...network.options.nodes.font,
+      size: 11,
+    };
+    network.setOptions({
+      nodes: {
+        font: {
+          content: nodeId.length > 18 ? nodeId.slice(0, 15) + '…' : nodeId,
+        },
+      },
+    });
+  });
+
+  network.on('blurNode', function () {
+    network.setOptions({ nodes: { font: { content: undefined } } });
+  });
+
+  // ── Hover edge tooltip ──────────────────────────────────────────
+  network.on('hoverEdge', function (params) {
+    const edgeId = params.edge;
+    const edge = edgesDataSet.get(edgeId);
+    if (!edge) return;
+    const d = edge._data || {};
+    const lines = [`src → dst: ${edge.from} → ${edge.to}`];
+    if (d.score !== undefined) lines.push(`score: ${d.score}`);
+    if (d.relationship) lines.push(`type: ${d.relationship}`);
+    if (d.price !== undefined) lines.push(`price: ${d.price}`);
+    if (d.last_interaction) lines.push(`last: ${d.last_interaction}`);
+    network.setOptions({
+      interaction: { tooltipDelay: 300, hover: true },
+      edges: { font: { content: '' } },
+      tooltip: { content: lines.join('<br>') },
+    });
+  });
+}
+
+// ─── Build vis items from API data (shared by draw + silent refresh) ────
+function _buildGraphItems(data) {
+  const degree = {};
+  for (const link of data.links) {
+    degree[link.source] = (degree[link.source] || 0) + 1;
+    degree[link.target] = (degree[link.target] || 0) + 1;
+  }
+
+  const scores = data.links.map(l => l.score).filter(s => s !== undefined && s !== null);
+  const minScore = scores.length > 0 ? Math.min(...scores) : 0;
+  const maxScore = scores.length > 0 ? Math.max(...scores) : 1;
+  const scoreRange = maxScore - minScore || 1;
+
+  const nodes = data.nodes.map(n => ({
+    id: n.id,
+    label: n.id,
+    title: `id: ${n.id}<br>type: ${n.type || 'unknown'}<br>degree: ${degree[n.id] || 0}`,
+    color: COLORS[n.type] || { background: '#888', border: '#888' },
+    value: Math.max(5, Math.min(40, (degree[n.id] || 0) * 3)),
+    shape: n.type === 'USER' ? 'dot' : n.type === 'PROD' ? 'square' : 'diamond',
+    _type: n.type || 'unknown',
+    _degree: degree[n.id] || 0,
+  }));
+
+  const edges = data.links.map((e, i) => {
+    const raw = e.data || e;
+    const relationship = raw.relationship || raw.title || '';
+    const score = e.score !== undefined ? e.score : (raw.score || 0);
+    const widthVal = 0.5 + 3.5 * ((score - minScore) / scoreRange);
+    return {
+      id: `e-${i}`,
+      from: e.source,
+      to: e.target,
+      label: score.toFixed(1),
+      value: score,
+      width: widthVal,
+      color: {
+        color: EDGE_COLORS[relationship] || DEFAULT_EDGE_COLOR,
+        highlight: '#fff',
+        hover: '#fff',
+        opacity: 0.85,
+      },
+      title: `score: ${score}<br>type: ${relationship}`,
+      font: { size: Math.min(12, 8 + widthVal * 2) },
+      _data: raw,
+    };
+  });
+
+  return { nodes, edges, minScore, maxScore };
+}
+
+// ─── Load graph data into vis (first load or user action) ───────────────
+function drawGraph(data) {
+  hideLoading();
+
+  const items = _buildGraphItems(data);
+
+  nodesDataSet.clear();
+  edgesDataSet.clear();
+  nodesDataSet.add(items.nodes);
+  edgesDataSet.add(items.edges);
+
+  currentGraphData = data;
+
+  // Stabilise then turn off physics for performance
+  network.setOptions({ physics: { stabilization: { iterations: 300 } } });
+  network.setData({ nodes: nodesDataSet, edges: edgesDataSet });
+
+  setTimeout(() => {
+    network.setOptions({ physics: { enabled: false } });
+  }, 2000);
+}
+
+// ─── Silent data swap for auto-refresh (preserves camera & physics) ────
+function drawGraphSilent(data) {
+  // Save viewport state
+  const viewPos = network.getViewPosition();
+  const scale = network.getScale();
+
+  // Ensure physics is OFF so it doesn't jump
+  network.setOptions({ physics: { enabled: false } });
+
+  const items = _buildGraphItems(data);
+
+  // Replace DataSet contents in-place without clearing first,
+  // so vis-network doesn't see an empty state and reset the viewport.
+  const existingNodeIds = new Set(nodesDataSet.getIds());
+  const newNodeIds = new Set(items.nodes.map(n => n.id));
+
+  // Remove nodes/edges no longer present
+  for (const id of existingNodeIds) {
+    if (!newNodeIds.has(id)) nodesDataSet.remove(id);
+  }
+  const existingEdgeIds = new Set(edgesDataSet.getIds());
+  const newEdgeIds = new Set(items.edges.map(e => e.id));
+  for (const id of existingEdgeIds) {
+    if (!newEdgeIds.has(id)) edgesDataSet.remove(id);
+  }
+
+  // Update existing items in-place
+  nodesDataSet.update(items.nodes.filter(n => existingNodeIds.has(n.id)));
+  edgesDataSet.update(items.edges.filter(e => existingEdgeIds.has(e.id)));
+
+  // Add new items
+  const addNodes = items.nodes.filter(n => !existingNodeIds.has(n.id));
+  const addEdges = items.edges.filter(e => !existingEdgeIds.has(e.id));
+  if (addNodes.length) nodesDataSet.add(addNodes);
+  if (addEdges.length) edgesDataSet.add(addEdges);
+
+  currentGraphData = data;
+
+  // Restore camera immediately
+  network.moveTo({ position: viewPos, scale: scale });
+}
+
+// ─── Auto-refresh state machine ──────────────────────────────────────────
+
+function _getAutoRefreshInterval() {
+  return parseInt(document.getElementById('auto-refresh-interval').value, 10);
+}
+
+function _scheduleAutoRefresh() {
+  _clearAutoRefresh();
+  if (!document.getElementById('auto-refresh-toggle').checked) return;
+  if (!currentView) return;
+
+  const interval = _getAutoRefreshInterval();
+  autoRefreshTimer = setTimeout(_doAutoRefresh, interval);
+  const modeLabel = { 'best-edges': 'Best Edges', 'node': 'Node', 'edge': 'Edge' }[currentView.mode] || currentView.mode;
+  document.getElementById('auto-refresh-status').textContent = `⏳ Refreshing ${modeLabel} every ${interval / 1000}s…`;
+}
+
+function _clearAutoRefresh() {
+  if (autoRefreshTimer) {
+    clearTimeout(autoRefreshTimer);
+    autoRefreshTimer = null;
+  }
+}
+
+async function _doAutoRefresh() {
+  if (!currentView) {
+    _clearAutoRefresh();
+    document.getElementById('auto-refresh-status').textContent = '';
+    return;
+  }
+
+  try {
+    // First refresh the backend data
+    await fetch('/api/refresh');
+
+    // Then re-fetch the current view (silently — no loading overlay)
+    const { mode, params } = currentView;
+    let url = '';
+    if (mode === 'best-edges') {
+      url = '/api/best-edges?limit=100';
+    } else if (mode === 'node') {
+      url = `/api/node/${encodeURIComponent(params.id)}?hops=${params.hops}`;
+      if (params.maxEdges) url += `&max_edges=${params.maxEdges}`;
+      if (params.minScore) url += `&min_score=${params.minScore}`;
+    } else if (mode === 'edge') {
+      url = `/api/edge?src=${encodeURIComponent(params.src)}&dst=${encodeURIComponent(params.dst)}&hops=${params.hops}`;
+      if (params.maxEdges) url += `&max_edges=${params.maxEdges}`;
+    }
+
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    // Swap data silently — no loading overlay, preserves camera & physics
+    drawGraphSilent(data);
+    fetchStats();
+
+    // Restore info panel for the current view
+    if (mode === 'best-edges') {
+      showDefaultInfo();
+    } else if (mode === 'node') {
+      showNodeInfo(params.id);
+    } else if (mode === 'edge') {
+      showEdgeInfo(params.src, params.dst);
+    }
+  } catch (err) {
+    console.warn('Auto-refresh failed:', err.message);
+  }
+
+  // Re-schedule
+  _scheduleAutoRefresh();
+}
+
+function onAutoRefreshToggle() {
+  if (document.getElementById('auto-refresh-toggle').checked) {
+    document.getElementById('auto-refresh-status').textContent = '⏳ Starting auto-refresh…';
+    _scheduleAutoRefresh();
+  } else {
+    _clearAutoRefresh();
+    document.getElementById('auto-refresh-status').textContent = '';
+  }
+}
+
+function onAutoRefreshIntervalChange() {
+  if (document.getElementById('auto-refresh-toggle').checked) {
+    _scheduleAutoRefresh();
+  }
+}
+
+function _setCurrentView(mode, params) {
+  currentView = { mode, params };
+  if (document.getElementById('auto-refresh-toggle').checked) {
+    _scheduleAutoRefresh();
+  }
+}
+
+// ─── API calls ───────────────────────────────────────────────────────────
+
+async function loadBestEdges() {
+  showLoading('🏆 Loading best edges…');
+  try {
+    const res = await fetch('/api/best-edges?limit=100');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    drawGraph(data);
+    showDefaultInfo();
+    fetchStats();
+    _setCurrentView('best-edges', {});
+  } catch (err) {
+    showError(`Failed to load best edges: ${err.message}`);
+  }
+}
+
+async function onNodeSearch(nodeId) {
+  const id = nodeId || document.getElementById('node-search').value.trim();
+  if (!id) return;
+  const hops = document.getElementById('node-hops').value;
+  const maxEdges = document.getElementById('node-max-edges').value || '';
+  const minScore = document.getElementById('node-min-score').value || '';
+
+  showLoading(`🔍 Loading node ${id}…`);
+  try {
+    let url = `/api/node/${encodeURIComponent(id)}?hops=${hops}`;
+    if (maxEdges) url += `&max_edges=${maxEdges}`;
+    if (minScore) url += `&min_score=${minScore}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    drawGraph(data);
+    showNodeInfo(id);
+    fetchStats();
+    _setCurrentView('node', { id, hops, maxEdges, minScore });
+  } catch (err) {
+    showError(`Failed to load node: ${err.message}`);
+  }
+}
+
+async function onEdgeSearch() {
+  const src = document.getElementById('edge-src').value.trim();
+  const dst = document.getElementById('edge-dst').value.trim();
+  if (!src || !dst) {
+    showInfo('Please enter both source and target node IDs.');
+    return;
+  }
+  const hops = document.getElementById('edge-hops').value;
+  const maxEdges = document.getElementById('edge-max-edges').value || '';
+
+  showLoading(`🔍 Loading edge ${src} → ${dst}…`);
+  try {
+    let url = `/api/edge?src=${encodeURIComponent(src)}&dst=${encodeURIComponent(dst)}&hops=${hops}`;
+    if (maxEdges) url += `&max_edges=${maxEdges}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    drawGraph(data);
+    showEdgeInfo(src, dst);
+    fetchStats();
+    _setCurrentView('edge', { src, dst, hops, maxEdges });
+  } catch (err) {
+    showError(`Failed to load edge: ${err.message}`);
+  }
+}
+
+async function onNodeSearchInput(val) {
+  clearTimeout(searchTimeout);
+  if (val.length < 2) {
+    document.getElementById('node-suggestions').innerHTML = '';
+    return;
+  }
+  searchTimeout = setTimeout(async () => {
+    try {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(val)}`);
+      if (!res.ok) return;
+      const results = await res.json();
+      const datalist = document.getElementById('node-suggestions');
+      datalist.innerHTML = results
+        .map(r => `<option value="${r.id}">[${r.type}] ${r.id}</option>`)
+        .join('');
+    } catch (_) {}
+  }, 200);
+}
+
+async function fetchStats() {
+  try {
+    const res = await fetch('/api/stats');
+    if (!res.ok) return;
+    const stats = await res.json();
+    document.getElementById('stat-vertices').textContent = stats.vertices.toLocaleString();
+    document.getElementById('stat-edges').textContent = stats.edges.toLocaleString();
+  } catch (_) {}
+}
+
+// ─── Info panel ──────────────────────────────────────────────────────────
+
+function showNodeInfo(nodeId) {
+  const data = currentGraphData;
+  if (!data) return;
+  const node = data.nodes.find(n => n.id === nodeId);
+  if (!node) {
+    document.getElementById('info-panel').innerHTML = `<span class="info-title">Node: ${nodeId}</span> (no data)`;
+    return;
+  }
+  // Compute degree from current graph
+  const degree = data.links.filter(e => e.source === nodeId || e.target === nodeId).length;
+
+  let html = `<div class="info-title">📌 Node: ${node.id}</div>`;
+  html += `<span class="info-key">type:</span> <span class="info-val">${node.type || 'unknown'}</span><br>`;
+  html += `<span class="info-key">degree:</span> <span class="info-val">${degree}</span>`;
+
+  // Show weighted breakdown by relationship type
+  const relCounts = {};
+  for (const e of data.links) {
+    if (e.source === nodeId || e.target === nodeId) {
+      const rel = (e.data && e.data.relationship) || 'unknown';
+      relCounts[rel] = (relCounts[rel] || 0) + 1;
+    }
+  }
+  if (Object.keys(relCounts).length > 0) {
+    html += '<br><br><span class="info-key">edge breakdown:</span><br>';
+    for (const [rel, count] of Object.entries(relCounts)) {
+      const color = EDGE_COLORS[rel] || '#888';
+      html += `<span style="color:${color};font-weight:600;">▸</span> ${rel}: ${count}<br>`;
+    }
+  }
+
+  document.getElementById('info-panel').innerHTML = html;
+}
+
+function showEdgeInfo(src, dst) {
+  const data = currentGraphData;
+  if (!data) return;
+  const link = data.links.find(e => e.source === src && e.target === dst);
+  if (!link) {
+    document.getElementById('info-panel').innerHTML = `<span class="info-title">Edge: ${src} → ${dst}</span> (no data)`;
+    return;
+  }
+  const raw = link.data || link;
+
+  let html = `<div class="info-title">📎 Edge: ${src} → ${dst}</div>`;
+  const fields = ['relationship', 'score', 'price', 'last_interaction'];
+  for (const f of fields) {
+    if (raw[f] !== undefined && raw[f] !== null) {
+      html += `<span class="info-key">${f}:</span> <span class="info-val">${raw[f]}</span><br>`;
+    }
+  }
+
+  // Also show the source and target node info
+  const srcNode = data.nodes.find(n => n.id === src);
+  const dstNode = data.nodes.find(n => n.id === dst);
+  html += '<br>';
+  html += `<span class="info-key">source type:</span> <span class="info-val">${srcNode ? srcNode.type : '?'}</span><br>`;
+  html += `<span class="info-key">target type:</span> <span class="info-val">${dstNode ? dstNode.type : '?'}</span>`;
+
+  document.getElementById('info-panel').innerHTML = html;
+}
+
+function showDefaultInfo() {
+  const data = currentGraphData;
+  if (data) {
+    const nNodes = data.nodes.length;
+    const nEdges = data.links.length;
+    document.getElementById('info-panel').innerHTML = `
+      <span class="info-title">Graph loaded</span>
+      <span class="info-key">nodes:</span> <span class="info-val">${nNodes}</span><br>
+      <span class="info-key">edges:</span> <span class="info-val">${nEdges}</span><br>
+      <span style="color:#555;font-style:italic;">Click a node or edge for details.</span>
+    `;
+  } else {
+    document.getElementById('info-panel').innerHTML = '<span class="info-empty">Click a node or edge on the graph, or use the search above.</span>';
+  }
+}
+
+function showInfo(msg) {
+  document.getElementById('info-panel').innerHTML = `<span class="info-title">ℹ️</span> ${msg}`;
+}
+
+function showError(msg) {
+  hideLoading();
+  document.getElementById('info-panel').innerHTML = `<span class="info-title" style="color:#f44;">⚠️ Error</span> ${msg}`;
+}
+
+// ─── Highlight / clear ───────────────────────────────────────────────────
+
+function highlightNodeNeighborhood(nodeId) {
+  if (!network) return;
+  const allNodes = nodesDataSet.getIds();
+  const allEdges = edgesDataSet.getIds();
+  const connectedEdges = network.getConnectedEdges(nodeId);
+  const connectedNodes = network.getConnectedNodes(nodeId);
+
+  const connectedSet = new Set(connectedNodes);
+  connectedSet.add(nodeId);
+  const edgeSet = new Set(connectedEdges);
+
+  // Dim everything
+  nodesDataSet.forEach(n => {
+    if (!connectedSet.has(n.id)) {
+      nodesDataSet.update({ id: n.id, color: { ...n.color, opacity: 0.15 }, font: { color: '#444' } });
+    }
+  });
+  edgesDataSet.forEach(e => {
+    if (!edgeSet.has(e.id)) {
+      edgesDataSet.update({ id: e.id, color: { ...e.color, opacity: 0.08 } });
+    }
+  });
+}
+
+function highlightEdge(edgeId) {
+  if (!network) return;
+  edgesDataSet.forEach(e => {
+    if (e.id !== edgeId) {
+      edgesDataSet.update({ id: e.id, color: { ...e.color, opacity: 0.08 } });
+    }
+  });
+  nodesDataSet.forEach(n => {
+    nodesDataSet.update({ id: n.id, color: { ...n.color, opacity: 0.15 }, font: { color: '#444' } });
+  });
+}
+
+function clearHighlight() {
+  if (!network) return;
+  nodesDataSet.forEach(n => {
+    const col = COLORS[n._type] || { background: '#888', border: '#888' };
+    nodesDataSet.update({ id: n.id, color: { ...col, opacity: 1.0 }, font: { color: '#ccc' } });
+  });
+  edgesDataSet.forEach(e => {
+    const rel = (e._data && e._data.relationship) || '';
+    const col = EDGE_COLORS[rel] || DEFAULT_EDGE_COLOR;
+    edgesDataSet.update({ id: e.id, color: { color: col, highlight: '#fff', hover: '#fff', opacity: 0.85 } });
+  });
+}
+
+// ─── Loading overlay ──────────────────────────────────────────────────────
+
+function showLoading(msg) {
+  const overlay = document.getElementById('loading-overlay');
+  overlay.textContent = msg || '⏳ Loading graph data…';
+  overlay.classList.remove('hidden');
+}
+
+function hideLoading() {
+  document.getElementById('loading-overlay').classList.add('hidden');
+}
+
+// ─── Init ────────────────────────────────────────────────────────────────
+
+initNetwork();
+loadBestEdges();
+</script>
+</body>
+</html>

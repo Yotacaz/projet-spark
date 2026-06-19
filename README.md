@@ -1,7 +1,7 @@
 # Projet Big Data — Streaming d'Interactions Commerciales (Style LeBonCoin)
 
-> Module : Architecture et Programmation Distribuée Big Data  
-> CY Tech — ING2 Génie Informatique
+> Cours électif : Spark et Big Data  
+> CY Tech — ING1 Génie Informatique
 
 ## Architecture du pipeline
 
@@ -20,19 +20,24 @@ Producteur JSON           PySpark Structured       Visualisation
 | `dashboard/` | Interface graphique dynamique | 🔧 En cours |
 
 ## Démarrage rapide
+Ce projet nécessite Python 3.11 et Java 17 à cause de Spark.
 
 ```bash
+# uv (instalation des dépendances):
+uv sync --upgrade
+# activation de l'environnement virtuel(depuis la racine du projet):
+source .venv/bin/activate
 
 ## DOCKER 
-# 0. lancer docker desktop
-# 1. dans un terminal dedier:
+# 0. lancer docker desktop (ou utiliser sudo service docker restart sur linux)
+# 1. dans un terminal dedié:
 docker-compose up
 
 # 2. Lancer le simulateur
-python simulateur/simulateur.py
+python3 simulateur/simulateur.py
 
 # 3. Lancer spark_streaming
-python spark_streaming/spark_streaming.py
+python3 spark_streaming/spark_streaming.py
 
 
 ## Schéma des événements
@@ -70,9 +75,7 @@ df = spark.readStream \
           .format("json") \
           .schema(event_schema) \
           .load("./data/stream/")
-```
-uv sync --upgrade
-```
+
 
 Pour spécifier la bonne version de Java (sous linux): 
 ```bash

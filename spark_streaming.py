@@ -1,19 +1,4 @@
-import os
-import sys
-
-# ----! Adapter ceci pour votre machine ou retirer le !-----#
-os.environ["PYSPARK_PYTHON"] = sys.executable
-os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
-
-if sys.platform == "win32":
-    os.environ["JAVA_HOME"]  = "C:/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot"
-    os.environ["HADOOP_HOME"] = "C:/hadoop"
-    os.environ["PATH"] = "C:/hadoop/bin;" + os.environ.get("PATH", "")
-    os.environ["JAVA_TOOL_OPTIONS"] = (
-        os.environ.get("JAVA_TOOL_OPTIONS", "") +
-        " -Djavax.security.auth.useSubjectCredsOnly=false"
-    )
-# ----------------------------------------------------------#
+from config import get_spark_session
 
 from typing import Callable, Optional
 from pyspark.sql import SparkSession, DataFrame
@@ -36,19 +21,7 @@ SCHEMA = StructType([
 ])
 
 
-def build_spark_session() -> SparkSession:
-    """Crée et retourne une SparkSession configurée."""
-    return (
-        SparkSession.builder
-        .appName("MarketplaceKafka")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config(
-            "spark.jars.packages",
-            "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,"
-            "graphframes:graphframes:0.8.3-spark3.5-s_2.12",
-        )
-        .getOrCreate()
-    )
+
 
 
 def build_graph_dataframes(batch_df: DataFrame):
@@ -78,6 +51,7 @@ def build_graph_dataframes(batch_df: DataFrame):
         col("user_id").alias("src"),
         col("product_id").alias("dst"),
         col("action_type").alias("relationship"),
+        col("timestamp"),
         when(col("action_type") == "like",  lit(0.0)) # aime = 0, vout = price, achat = price
         .otherwise(col("price"))
         .alias("weight"),
@@ -115,7 +89,7 @@ def start_streams(
     await_termination: bool = True,
 ):
     if spark is None:
-        spark = build_spark_session()
+        spark = get_spark_session()
 
     # ── Lecture Kafka ────────────────────────────────────────────────────────
     df_raw = (
