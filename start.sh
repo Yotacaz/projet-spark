@@ -88,7 +88,7 @@ MAIN_PID=$!
 sleep 5
 
 echo "lancement du app.py..."
-python3 app.py > app.log 2>&1 &
+python3 app.py &
 APP_PID=$!
 
 

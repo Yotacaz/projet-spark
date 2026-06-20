@@ -33,8 +33,12 @@ def get_spark_session() -> SparkSession:
         .master("local[6]")  # laisse de la marge au système
         .appName("MarketplaceGraph")
 
-        # Mémoire
-        .config("spark.driver.memory", "3g")
+        # Mémoire - augmentée pour éviter les erreurs d'allocation
+        .config("spark.driver.memory", "8g")
+        .config("spark.executor.memory", "4g")
+        .config("spark.driver.maxResultSize", "2g")
+        .config("spark.memory.fraction", "0.8")
+        .config("spark.memory.storageFraction", "0.5")
 
         # Parallelisme
         .config("spark.sql.shuffle.partitions", "8")
@@ -47,6 +51,11 @@ def get_spark_session() -> SparkSession:
 
         # Partitions de lecture plus petites
         .config("spark.sql.files.maxPartitionBytes", "128MB")
+        
+        # Réduire la taille des broadcasts et optimiser la mémoire des tâches
+        .config("spark.sql.autoBroadcastJoinThreshold", "-1")  # Désactive l'auto-broadcast pour éviter les gros broadcasts
+        .config("spark.driver.extraJavaOptions", "-XX:+UseG1GC -XX:MaxGCPauseMillis=200")
+        .config("spark.executor.extraJavaOptions", "-XX:+UseG1GC -XX:MaxGCPauseMillis=200")
 
         # Delta Lake
         .config("spark.delta.optimizeWrite.enabled", "false")

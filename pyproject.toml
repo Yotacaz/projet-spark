@@ -12,6 +12,7 @@ dependencies = [
     "graphframes>=0.6",
     "kafka-python>=3.0.0",
     "networkx>=3.6.1",
+    "pandas>=3.0.3",
     "pyspark==3.5.1",
     "pyvis>=0.3.2",
     "uvicorn>=0.49.0",

@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 from functools import reduce
-from typing import Optional, Literal
+from typing import Optional, Literal, Final, Any, Callable
+from collections.abc import Iterator
 
 import pyspark.sql.functions as F
 from delta.tables import DeltaTable, ColumnMapping
 from pyspark.sql import DataFrame
+import pandas as pd
+from pyspark.storagelevel import StorageLevel
+from pyspark.sql.streaming import StreamingQuery
+from pyspark.sql.streaming.state import GroupStateTimeout
 
+from timer import timed
 from config import (
     get_spark_session,
     RELATIONSHIP_SCORES,
@@ -26,7 +32,7 @@ AGGREGATION_FUNC = [
 ]
 
 UPDATE_SET: ColumnMapping = {
-    event_type: (F.col(f"target.{event_type}") + F.col(f"source.{event_type}"))
+    event_type: F.col(f"target.{event_type}") + F.col(f"source.{event_type}")
     for event_type in EVENT_TYPE
 }
 UPDATE_SET["last_interaction"] = F.greatest(
@@ -44,6 +50,8 @@ _edges_df: Optional[DataFrame] = None
 _vertices_df: Optional[DataFrame] = None
 
 _delta_table_cache: dict[str, DeltaTable | None] = {}
+
+RAW_MATERIALIZER_CHECKPOINT_BASE: Final[str] = "/tmp/graph_materializer_checkpoint"
 
 
 def _get_delta_table(path: str) -> DeltaTable | None:
@@ -66,94 +74,317 @@ def _register_delta_table(path: str) -> DeltaTable:
 
 def invalidate_graph_cache() -> None:
     global _edges_df, _vertices_df
-    _edges_df = None
-    _vertices_df = None
+    
+    # Unpersist old DataFrames to prevent memory leaks
+    if _edges_df is not None:
+        try:
+            _edges_df.unpersist()
+        except Exception:
+            pass  # DataFrame may already be unpersisted
+        _edges_df = None
+    
+    if _vertices_df is not None:
+        try:
+            _vertices_df.unpersist()
+        except Exception:
+            pass  # DataFrame may already be unpersisted
+        _vertices_df = None
 
 
-def get_edges_and_vertices(force_reload: bool = False) -> tuple[DataFrame, DataFrame]:
+def _is_empty(df: DataFrame) -> bool:
+    return len(df.head(1)) == 0
+
+
+def _append_raw_delta(df: DataFrame, path: str, epoch_id: int) -> None:
+    (
+        df.withColumn("epoch_id", F.lit(epoch_id))
+        .write.format("delta")
+        .mode("append")
+        .save(path)
+    )
+
+
+def _merge_vertices_snapshot(batch_df: DataFrame, batch_id: int) -> None:
+    if _is_empty(batch_df):
+        return
+
+    vertices_table = _get_delta_table(VERTICES_PATH)
+    if vertices_table is not None:
+        (
+            vertices_table.alias("t")
+            .merge(batch_df.alias("s"), "t.id = s.id")
+            .whenMatchedUpdate(set={"type": "s.type"})
+            .whenNotMatchedInsert(values={"id": "s.id", "type": "s.type"})
+            .execute()
+        )
+    else:
+        batch_df.write.format("delta").mode("overwrite").save(VERTICES_PATH)
+        _register_delta_table(VERTICES_PATH)
+
+
+def _merge_edges_snapshot(batch_df: DataFrame, batch_id: int) -> None:
+    if _is_empty(batch_df):
+        return
+
+    edges_table = _get_delta_table(EDGES_PATH)
+    if edges_table is not None:
+        (
+            edges_table.alias("target")
+            .merge(
+                batch_df.alias("source"),
+                "target.src = source.src AND target.dst = source.dst",
+            )
+            .whenMatchedUpdate(set=UPDATE_SET)
+            .whenNotMatchedInsertAll()
+            .execute()
+        )
+    else:
+        batch_df.write.format("delta").mode("overwrite").save(EDGES_PATH)
+        _register_delta_table(EDGES_PATH)
+
+
+def _make_edge_state_update(
+    relationship_scores: dict[str, float], event_types: list[str]
+) -> Callable:
+    """Factory function to avoid capturing large global variables in closure."""
+    def _edge_state_update(
+        key: tuple[str, str],
+        pdf_iter: Iterator,
+        state: Any,
+    ) -> Iterator:
+        # Import pandas locally to avoid capturing the entire pandas module in closure
+        import pandas as pd
+        src, dst = key
+        scores = relationship_scores
+        etypes = event_types
+
+        if state.exists:
+            count, last_interaction, last_epoch_id, score = state.get()
+            count = int(count)
+            last_epoch_id = int(last_epoch_id)
+            score = float(score)
+        else:
+            count = 0
+            last_interaction = None
+            last_epoch_id = -1
+            score = 0.0
+
+        for pdf in pdf_iter:
+            if pdf.empty:
+                continue
+
+            batch_count = int(len(pdf))
+            batch_last_interaction = pdf["timestamp"].max()
+            batch_epoch_id = int(pdf["epoch_id"].max()) if "epoch_id" in pdf.columns else last_epoch_id
+
+            count += batch_count
+
+            should_replace = False
+            if last_interaction is None and pd.notna(batch_last_interaction):
+                should_replace = True
+            elif pd.notna(batch_last_interaction) and batch_last_interaction > last_interaction:
+                should_replace = True
+            elif pd.notna(batch_last_interaction) and batch_last_interaction == last_interaction:
+                should_replace = batch_epoch_id >= last_epoch_id
+
+            if should_replace:
+                last_interaction = batch_last_interaction
+                last_epoch_id = batch_epoch_id
+
+            score = float(
+                sum(count * scores[et] for et in etypes)
+            )
+
+        state.update((count, last_interaction, last_epoch_id, score))
+
+        yield pd.DataFrame(
+            [
+                {
+                    "src": src,
+                    "dst": dst,
+                    "count": count,
+                    "last_interaction": last_interaction,
+                    "score": score,
+                    **{et: 0 for et in etypes},
+                }
+            ]
+        )
+    return _edge_state_update
+
+
+def _make_vertex_state_update() -> Callable:
+    """Factory function to avoid capturing global variables in closure."""
+    def _vertex_state_update(
+        key: tuple[str],
+        pdf_iter: Iterator,
+        state: Any,
+    ) -> Iterator:
+        # Import pandas locally to avoid capturing the entire pandas module in closure
+        import pandas as pd
+        (vertex_id,) = key
+
+        if state.exists:
+            current_type, last_epoch_id = state.get()
+            last_epoch_id = int(last_epoch_id)
+        else:
+            current_type = None
+            last_epoch_id = -1
+
+        for pdf in pdf_iter:
+            if pdf.empty:
+                continue
+
+            if "epoch_id" in pdf.columns:
+                batch = pdf.sort_values("epoch_id")
+                row = batch.iloc[-1]
+                batch_epoch_id = int(row["epoch_id"])
+            else:
+                row = pdf.iloc[-1]
+                batch_epoch_id = last_epoch_id
+
+            if batch_epoch_id >= last_epoch_id:
+                current_type = row["type"]
+                last_epoch_id = batch_epoch_id
+
+        state.update((current_type, last_epoch_id))
+
+        yield pd.DataFrame(
+            [
+                {
+                    "id": vertex_id,
+                    "type": current_type,
+                }
+            ]
+        )
+    return _vertex_state_update
+
+
+def start_graph_materializer() -> tuple[StreamingQuery, StreamingQuery]:
+    """
+    Lance un materializer stateful séparé.
+    À appeler une seule fois dans un job dédié.
+    """
+    # Configure memory settings for streaming
+    spark.conf.set(
+        "spark.sql.streaming.stateStore.providerClass",
+        "org.apache.spark.sql.execution.streaming.state.RocksDBStateStoreProvider",
+    )
+    spark.conf.set("spark.sql.streaming.minBatchesToRetain", "2")  # Reduce memory usage
+    spark.conf.set("spark.streaming.backpressure.enabled", "true")  # Enable backpressure
+    
+    # Use factory functions to avoid capturing global variables in closures
+    # This significantly reduces the size of serialized task binaries
+    edge_state_func = _make_edge_state_update(RELATIONSHIP_SCORES, EVENT_TYPE)
+    vertex_state_func = _make_vertex_state_update()
+
+    raw_edges_stream = (
+        spark.readStream.format("delta")
+        .load(EDGES_RAW_PATH)
+        .select("src", "dst", "relationship", "timestamp", "epoch_id")
+    )
+
+    edges_state_df = raw_edges_stream.groupBy("src", "dst").applyInPandasWithState(
+        edge_state_func,  # type: ignore[attr-defined]
+        outputStructType="""
+            src string,
+            dst string,
+            count long,
+            last_interaction timestamp,
+            score double,
+            """ + ", ".join(f"{event_type} long" for event_type in EVENT_TYPE),
+        stateStructType="""
+            count long,
+            last_interaction timestamp,
+            last_epoch_id long,
+            score double
+        """,
+        outputMode="update",
+        timeoutConf=GroupStateTimeout.NoTimeout,
+    )
+
+    edges_query = (
+        edges_state_df.writeStream.foreachBatch(_merge_edges_snapshot)
+        .option("checkpointLocation", f"{RAW_MATERIALIZER_CHECKPOINT_BASE}/edges")
+        .outputMode("update")
+        .trigger(availableNow=True)
+        .start()
+    )
+
+    raw_vertices_stream = (
+        spark.readStream.format("delta")
+        .load(VERTICES_RAW_PATH)
+        .select("id", "type", "epoch_id")
+    )
+
+    vertices_state_df = raw_vertices_stream.groupBy("id").applyInPandasWithState(
+        vertex_state_func,  # type: ignore[attr-defined]
+        outputStructType="id string, type string",
+        stateStructType="type string, last_epoch_id long",
+        outputMode="update",
+        timeoutConf=GroupStateTimeout.NoTimeout,
+    )
+
+    vertices_query = (
+        vertices_state_df.writeStream.foreachBatch(_merge_vertices_snapshot)
+        .option("checkpointLocation", f"{RAW_MATERIALIZER_CHECKPOINT_BASE}/vertices")
+        .outputMode("update")
+        .trigger(availableNow=True)
+        .start()
+    )
+
+    return edges_query, vertices_query
+
+def _empty_like(df: DataFrame) -> DataFrame:
+    return df.limit(0)
+
+def get_edges_and_vertices(force_reload: bool = False, persist: bool = False) -> tuple[DataFrame, DataFrame]:
+    """
+    Charge les tables Delta une seule fois et les garde en mémoire côté Spark.
+    
+    Args:
+        force_reload: Si True, recharge les données depuis le stockage
+        persist: Si True, persiste les DataFrames en mémoire (par défaut False pour éviter les fuites mémoire)
+    """
     global _edges_df, _vertices_df
-    if force_reload or _edges_df is None:
-        _edges_df = spark.read.format("delta").load(EDGES_PATH)
-    if force_reload or _vertices_df is None:
-        _vertices_df = spark.read.format("delta").load(VERTICES_PATH)
+
+    if force_reload:
+        invalidate_graph_cache()
+
+    if _edges_df is None:
+        read_op = spark.read.format("delta").load(EDGES_PATH).select("src", "dst", "score", "last_interaction", *EVENT_TYPE)
+        _edges_df = read_op.persist(StorageLevel.MEMORY_AND_DISK) if persist else read_op
+
+    if _vertices_df is None:
+        read_op = spark.read.format("delta").load(VERTICES_PATH).select("id", "type")
+        _vertices_df = read_op.persist(StorageLevel.MEMORY_AND_DISK) if persist else read_op
+
     return _edges_df, _vertices_df
 
 
+@timed
 def refresh_edges_and_vertices() -> tuple[DataFrame, DataFrame]:
     """Force a reload of the Delta-backed graph tables."""
     invalidate_graph_cache()
     return get_edges_and_vertices(force_reload=True)
 
 
+@timed
 def handle_new_data(
     new_vertices_df: DataFrame, new_edges_df: DataFrame, epoch_id: int
 ) -> None:
-    """Insert/merge new vertices and edges into Delta tables."""
-    from pyspark.storagelevel import StorageLevel
-
+    """
+    Hot path minimal:
+    - écrit uniquement les données brutes si demandé
+    - n'effectue plus de MERGE sur les tables de service
+    """
     invalidate_graph_cache()
 
     if SAVE_RAW_DATA:
-        new_vertices_df = new_vertices_df.persist(StorageLevel.MEMORY_AND_DISK)
-        new_edges_df = new_edges_df.persist(StorageLevel.MEMORY_AND_DISK)
-
-    try:
-        if SAVE_RAW_DATA:
-            new_edges_df.withColumn("epoch_id", F.lit(epoch_id)).write.format("delta").mode(
-                "append"
-            ).save(EDGES_RAW_PATH)
-
-            new_vertices_df.withColumn("epoch_id", F.lit(epoch_id)).write.format("delta").mode(
-                "append"
-            ).save(VERTICES_RAW_PATH)
-
-        assert score_expr is not None, "score_expr should not be None"
-        batch_edges_agg_df = (
-            new_edges_df.groupBy("src", "dst")
-            .agg(*AGGREGATION_FUNC, F.max("timestamp").alias("last_interaction"))
-            .withColumn("score", score_expr)
-            .persist(StorageLevel.MEMORY_AND_DISK)
-        )
-        try:
-            # ── Vertices ─────────────────────────────────────────────────────
-            vertices_table = _get_delta_table(VERTICES_PATH)
-            if vertices_table is not None:
-                (
-                    vertices_table.alias("t")
-                    .merge(new_vertices_df.alias("s"), "t.id = s.id")
-                    .whenMatchedUpdate(set={"type": "s.type"})
-                    .whenNotMatchedInsert(values={"id": "s.id", "type": "s.type"})
-                    .execute()
-                )
-            else:
-                new_vertices_df.write.format("delta").mode("overwrite").save(VERTICES_PATH)
-                _register_delta_table(VERTICES_PATH)
-
-            # ── Edges ─────────────────────────────────────────────────────────
-            edges_table = _get_delta_table(EDGES_PATH)
-            if edges_table is not None:
-                (
-                    edges_table.alias("target")
-                    .merge(
-                        batch_edges_agg_df.alias("source"),
-                        "target.src = source.src AND target.dst = source.dst",
-                    )
-                    .whenMatchedUpdate(set=UPDATE_SET)
-                    .whenNotMatchedInsertAll()
-                    .execute()
-                )
-            else:
-                batch_edges_agg_df.write.format("delta").mode("overwrite").save(EDGES_PATH)
-                _register_delta_table(EDGES_PATH)
-
-        finally:
-            batch_edges_agg_df.unpersist()
-    finally:
-        if SAVE_RAW_DATA:
-            new_vertices_df.unpersist()
-            new_edges_df.unpersist()
+        _append_raw_delta(new_edges_df, EDGES_RAW_PATH, epoch_id)
+        _append_raw_delta(new_vertices_df, VERTICES_RAW_PATH, epoch_id)
 
 
+@timed
 def get_best_edges(
     edges_df: Optional[DataFrame] = None,
     vertices_df: Optional[DataFrame] = None,
@@ -178,62 +409,102 @@ def get_best_edges(
     return best_edges_df, vertices_used_df
 
 
-def _expand_frontier(
+def _incident_edges(
     edges_df: DataFrame,
     frontier_df: DataFrame,
     direction: Literal["both", "out", "in"],
 ) -> DataFrame:
-    """Return the next layer of node ids from a frontier."""
-    frontier = F.broadcast(frontier_df)
+    """
+    Retourne les arêtes incidentes à une frontière de nœuds,
+    sans jointure non équi (`OR`).
+    """
+    frontier = F.broadcast(frontier_df.select("id").dropDuplicates(["id"]))
 
     if direction == "out":
-        return (
-            edges_df.join(frontier, edges_df.src == frontier.id, "inner")
-            .select(edges_df.dst.alias("id"))
-            .distinct()
-        )
+        return edges_df.join(frontier, edges_df.src == frontier.id, "left_semi")
+
     if direction == "in":
-        return (
-            edges_df.join(frontier, edges_df.dst == frontier.id, "inner")
-            .select(edges_df.src.alias("id"))
-            .distinct()
-        )
+        return edges_df.join(frontier, edges_df.dst == frontier.id, "left_semi")
 
-    out_nodes = (
-        edges_df.join(frontier, edges_df.src == frontier.id, "inner")
-        .select(edges_df.dst.alias("id"))
-    )
-    in_nodes = (
-        edges_df.join(frontier, edges_df.dst == frontier.id, "inner")
-        .select(edges_df.src.alias("id"))
-    )
-    return out_nodes.unionByName(in_nodes).distinct()
+    out_edges = edges_df.join(frontier, edges_df.src == frontier.id, "left_semi")
+    in_edges = edges_df.join(frontier, edges_df.dst == frontier.id, "left_semi")
+    return out_edges.unionByName(in_edges).dropDuplicates(["src", "dst"])
 
 
-def _edges_touching_nodes(
-    edges_df: DataFrame,
-    nodes_df: DataFrame,
+def _next_frontier(
+    incident_edges: DataFrame,
+    current_frontier: DataFrame,
     direction: Literal["both", "out", "in"],
 ) -> DataFrame:
-    """Return edges connected to a node frontier, respecting direction."""
-    nodes = F.broadcast(nodes_df)
-
+    """
+    Calcule la nouvelle frontière à partir des arêtes incidentes.
+    On enlève les nœuds déjà vus pour éviter les boucles inutiles.
+    """
     if direction == "out":
-        return edges_df.join(nodes, edges_df.src == nodes.id, "inner").select(
-            *[F.col(c) for c in edges_df.columns]
+        nxt = incident_edges.select(F.col("dst").alias("id"))
+    elif direction == "in":
+        nxt = incident_edges.select(F.col("src").alias("id"))
+    else:
+        nxt = (
+            incident_edges.select(F.col("src").alias("id"))
+            .unionByName(incident_edges.select(F.col("dst").alias("id")))
         )
-    if direction == "in":
-        return edges_df.join(nodes, edges_df.dst == nodes.id, "inner").select(
-            *[F.col(c) for c in edges_df.columns]
-        )
 
-    return edges_df.join(
-        nodes,
-        (edges_df.src == nodes.id) | (edges_df.dst == nodes.id),
-        "inner",
-    ).select(*[F.col(c) for c in edges_df.columns])
+    return nxt.dropDuplicates(["id"]).join(current_frontier, "id", "left_anti")
 
+def _ego_subgraph(
+    seed_nodes: DataFrame,
+    edges_df: DataFrame,
+    vertices_df: DataFrame,
+    hops: int,
+    min_score: Optional[float],
+    direction: Literal["both", "out", "in"],
+    max_edges: Optional[int],
+) -> tuple[DataFrame, DataFrame]:
+    """
+    Cœur optimisé pour extraire un sous-graphe autour d'une frontière de départ.
+    """
+    if hops <= 0:
+        used_ids = seed_nodes.dropDuplicates(["id"])
+        sub_vertices = vertices_df.join(used_ids, "id", "inner")
+        return edges_df.limit(0), sub_vertices
 
+    edges_pool = edges_df
+    if min_score is not None:
+        edges_pool = edges_pool.filter(F.col("score") >= F.lit(min_score))
+
+    frontier = seed_nodes.select("id").dropDuplicates(["id"])
+    seen_nodes = frontier
+    collected_edges = edges_pool.limit(0)
+
+    for _ in range(hops):
+        incident = _incident_edges(edges_pool, frontier, direction)
+        collected_edges = collected_edges.unionByName(incident).dropDuplicates(["src", "dst"])
+
+        frontier = _next_frontier(incident, seen_nodes, direction)
+        if not frontier.take(1):
+            break
+
+        seen_nodes = seen_nodes.unionByName(frontier).dropDuplicates(["id"])
+
+    sub_edges = collected_edges
+    if max_edges is not None:
+        sub_edges = sub_edges.orderBy(
+            F.col("score").desc(),
+            F.col("last_interaction").desc(),
+        ).limit(max_edges)
+
+    used_ids_df = (
+        sub_edges.select(F.col("src").alias("id"))
+        .unionByName(sub_edges.select(F.col("dst").alias("id")))
+        .unionByName(seen_nodes)
+        .dropDuplicates(["id"])
+    )
+
+    sub_vertices = vertices_df.join(used_ids_df, "id", "inner")
+    return sub_edges, sub_vertices
+
+@timed
 def get_node_neighbors(
     node_id: str,
     edges_df: Optional[DataFrame] = None,
@@ -244,75 +515,30 @@ def get_node_neighbors(
     max_edges: Optional[int] = None,
 ) -> tuple[DataFrame, DataFrame]:
     """
-    Return the induced subgraph around a node.
-
-    hops=1 returns direct neighbours. hops>1 expands through repeated neighbour expansion.
+    Retourne le sous-graphe induit autour d’un nœud.
+    Version optimisée : expansion BFS sur la frontière courante,
+    sans jointures `OR` et sans `collect()` inutile.
     """
     if edges_df is None or vertices_df is None:
         edges_df, vertices_df = get_edges_and_vertices()
 
-    frontier = vertices_df.filter(F.col("id") == node_id).select("id")
-    if frontier.limit(1).collect() == []:
-        empty_edges = edges_df.limit(0)
-        empty_vertices = vertices_df.limit(0)
-        return empty_edges, empty_vertices
+    exists = vertices_df.filter(F.col("id") == F.lit(node_id)).select("id").take(1)
+    if not exists:
+        return _empty_like(edges_df), _empty_like(vertices_df)
 
-    filtered_edges = edges_df
-    if min_score is not None:
-        filtered_edges = filtered_edges.filter(F.col("score") >= F.lit(min_score))
-
-    if direction == "out":
-        filtered_edges = filtered_edges.filter(F.col("src") == F.lit(node_id))
-    elif direction == "in":
-        filtered_edges = filtered_edges.filter(F.col("dst") == F.lit(node_id))
-    else:
-        filtered_edges = filtered_edges.filter(
-            (F.col("src") == F.lit(node_id)) | (F.col("dst") == F.lit(node_id))
-        )
-
-    if hops <= 1:
-        sub_edges = filtered_edges
-        if max_edges is not None:
-            sub_edges = sub_edges.orderBy(F.col("score").desc(), F.col("last_interaction").desc()).limit(max_edges)
-        used_ids_df = (
-            sub_edges.select(F.col("src").alias("id"))
-            .unionByName(sub_edges.select(F.col("dst").alias("id")))
-            .unionByName(frontier)
-            .distinct()
-        )
-        sub_vertices = vertices_df.join(used_ids_df, "id", "inner")
-        return sub_edges, sub_vertices
-
-    current_nodes = frontier
-    collected_edges = filtered_edges
-
-    for _ in range(hops - 1):
-        next_nodes = _expand_frontier(edges_df, current_nodes, direction)
-        if min_score is not None:
-            next_edges_pool = edges_df.filter(F.col("score") >= F.lit(min_score))
-        else:
-            next_edges_pool = edges_df
-
-        next_edges = _edges_touching_nodes(next_edges_pool, next_nodes, direction)
-        collected_edges = collected_edges.unionByName(next_edges).dropDuplicates(
-            ["src", "dst"]
-        )
-        current_nodes = current_nodes.unionByName(next_nodes).distinct()
-
-    sub_edges = collected_edges
-    if max_edges is not None:
-        sub_edges = sub_edges.orderBy(F.col("score").desc(), F.col("last_interaction").desc()).limit(max_edges)
-
-    used_ids_df = (
-        sub_edges.select(F.col("src").alias("id"))
-        .unionByName(sub_edges.select(F.col("dst").alias("id")))
-        .unionByName(frontier)
-        .distinct()
+    seed = spark.createDataFrame([(node_id,)], "id string")
+    return _ego_subgraph(
+        seed_nodes=seed,
+        edges_df=edges_df,
+        vertices_df=vertices_df,
+        hops=hops,
+        min_score=min_score,
+        direction=direction,
+        max_edges=max_edges,
     )
-    sub_vertices = vertices_df.join(used_ids_df, "id", "inner")
-    return sub_edges, sub_vertices
 
 
+@timed
 def get_edge_context(
     src: str,
     dst: str,
@@ -323,52 +549,50 @@ def get_edge_context(
     max_edges: Optional[int] = None,
 ) -> tuple[DataFrame, DataFrame]:
     """
-    Return a subgraph centered on an edge (src -> dst).
-
-    The output includes the selected edge and the neighbourhood around its two endpoints.
+    Contexte autour d'une arête (src -> dst).
+    Optimisation importante : on calcule le voisinage des deux extrémités
+    en une seule passe, pas deux.
     """
     if edges_df is None or vertices_df is None:
         edges_df, vertices_df = get_edges_and_vertices()
 
-    selected = edges_df.filter((F.col("src") == F.lit(src)) & (F.col("dst") == F.lit(dst)))
+    selected = edges_df.filter(
+        (F.col("src") == F.lit(src)) & (F.col("dst") == F.lit(dst))
+    )
 
-    if selected.limit(1).collect() == []:
+    if not selected.take(1):
         raise ValueError(f"Edge ({src}, {dst}) not found.")
 
-    node_a_edges, node_a_vertices = get_node_neighbors(
-        src,
+    seed = spark.createDataFrame([(src,), (dst,)], "id string").dropDuplicates(["id"])
+
+    sub_edges, sub_vertices = _ego_subgraph(
+        seed_nodes=seed,
         edges_df=edges_df,
         vertices_df=vertices_df,
         hops=hops,
         min_score=min_score,
-        max_edges=max_edges,
-    )
-    node_b_edges, node_b_vertices = get_node_neighbors(
-        dst,
-        edges_df=edges_df,
-        vertices_df=vertices_df,
-        hops=hops,
-        min_score=min_score,
+        direction="both",
         max_edges=max_edges,
     )
 
-    sub_edges = (
-        node_a_edges.unionByName(node_b_edges).unionByName(selected).dropDuplicates(["src", "dst"])
-    )
+    sub_edges = sub_edges.unionByName(selected).dropDuplicates(["src", "dst"])
     if max_edges is not None:
-        sub_edges = sub_edges.orderBy(F.col("score").desc(), F.col("last_interaction").desc()).limit(max_edges)
+        sub_edges = sub_edges.orderBy(
+            F.col("score").desc(),
+            F.col("last_interaction").desc(),
+        ).limit(max_edges)
 
     used_ids_df = (
         sub_edges.select(F.col("src").alias("id"))
         .unionByName(sub_edges.select(F.col("dst").alias("id")))
-        .unionByName(node_a_vertices.select("id"))
-        .unionByName(node_b_vertices.select("id"))
-        .distinct()
+        .unionByName(sub_vertices.select("id"))
+        .dropDuplicates(["id"])
     )
+
     sub_vertices = vertices_df.join(used_ids_df, "id", "inner")
     return sub_edges, sub_vertices
 
-
+@timed
 def to_obj(edges_df: DataFrame, vertices_df: DataFrame) -> dict:
     """
     Convert Spark edges/vertices into a simple JSON-like object.
@@ -418,6 +642,7 @@ def _collect_edges(edges_df: DataFrame) -> list[dict]:
     return [row.asDict(recursive=True) for row in edges_df.toLocalIterator()]
 
 
+@timed
 def build_networkx_graph(edges_df: DataFrame, vertices_df: DataFrame):
     """
     Build a networkx graph from Spark data.
@@ -482,6 +707,7 @@ def _add_nodes_edges_to_pyvis(net, edges_df: DataFrame, vertices_df: DataFrame, 
         )
 
 
+@timed
 def visualize_graph_html(
     edges_df: DataFrame,
     vertices_df: DataFrame,
@@ -512,6 +738,7 @@ def visualize_graph_html(
     return output_path
 
 
+@timed
 def visualize_best_edges(
     edges_df: Optional[DataFrame] = None,
     vertices_df: Optional[DataFrame] = None,
@@ -523,6 +750,7 @@ def visualize_best_edges(
     return visualize_graph_html(best_edges_df, used_vertices_df, output_path=output_path)
 
 
+@timed
 def visualize_node(
     node_id: str,
     edges_df: Optional[DataFrame] = None,
@@ -542,6 +770,7 @@ def visualize_node(
     return visualize_graph_html(sub_edges, sub_vertices, output_path=output_path)
 
 
+@timed
 def visualize_edge(
     src: str,
     dst: str,
@@ -567,6 +796,7 @@ def visualize_edge(
 # Optional helper to generate a compact summary for UI use
 # ----------------------------
 
+@timed
 def summarise_selection(
     edges_df: DataFrame,
     vertices_df: DataFrame,
