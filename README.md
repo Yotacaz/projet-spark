@@ -11,16 +11,18 @@ Producteur JSON           PySpark Structured       Visualisation
 (source externe)          Streaming + GraphFrames  Graphe dynamique
 ```
 
-## Composants
-
-| Dossier | Rôle | État |
-|---|---|---|
-| `simulateur/` | Générateur de flux d'événements JSON | ✅ Terminé |
-| `spark_streaming/` | Traitement du flux (Spark + GraphFrames) | 🔧 En cours |
-| `dashboard/` | Interface graphique dynamique | 🔧 En cours |
 
 ## Démarrage rapide
 Ce projet nécessite Python 3.11 et Java 17 à cause de Spark.
+Commencez par installer les dépendances avec `uv` :
+```bash
+uv sync --upgrade
+```
+
+lancer l'application dans un seul terminal (pour linux):
+```bash
+bash start.sh
+```
 
 ```bash
 # uv (instalation des dépendances):
