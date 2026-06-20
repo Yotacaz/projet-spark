@@ -112,7 +112,7 @@ def start_streams(
     q2 = (
         df_parsed.writeStream
         .foreachBatch(make_batch_processor(on_graph))
-        .trigger(processingTime="15 seconds")
+        .trigger(processingTime="10 seconds")
         .start()
     )
 

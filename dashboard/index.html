@@ -401,7 +401,8 @@ input::placeholder { color: #555; }
         </div>
         <div style="flex:0 0 80px;">
           <select id="auto-refresh-interval" onchange="onAutoRefreshIntervalChange()" style="font-size:11px;padding:6px;">
-            <option value="5000">15s</option>
+            <option value="10000" selected>10s</option>
+            <option value="15000">15s</option>
             <option value="30000">30s</option>
             <option value="60000">60s</option>
           </select>
@@ -430,9 +431,9 @@ input::placeholder { color: #555; }
         <div>
           <label>Hops</label>
           <select id="node-hops">
-            <option value="1">1 (direct)</option>
+            <option value="1" selected>1 (direct)</option>
             <option value="2">2</option>
-            <option value="3" selected>3</option>
+            <option value="3">3</option>
           </select>
         </div>
         <div>

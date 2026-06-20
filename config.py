@@ -30,19 +30,19 @@ def get_spark_session() -> SparkSession:
 
     spark = (
         builder
-        .master("local[6]")  # laisse de la marge au système
+        .master("local[4]")  # laisse de la marge au système
         .appName("MarketplaceGraph")
 
         # Mémoire - augmentée pour éviter les erreurs d'allocation
-        .config("spark.driver.memory", "8g")
-        .config("spark.executor.memory", "4g")
-        .config("spark.driver.maxResultSize", "2g")
+        .config("spark.driver.memory", "6g")
+        .config("spark.executor.memory", "2g")
+        .config("spark.driver.maxResultSize", "1g")
         .config("spark.memory.fraction", "0.8")
         .config("spark.memory.storageFraction", "0.5")
 
         # Parallelisme
-        .config("spark.sql.shuffle.partitions", "8")
-        .config("spark.default.parallelism", "8")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.default.parallelism", "4")
 
         # Adaptive Query Execution
         .config("spark.sql.adaptive.enabled", "true")

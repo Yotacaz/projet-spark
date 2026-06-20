@@ -7,7 +7,6 @@ from collections.abc import Iterator
 import pyspark.sql.functions as F
 from delta.tables import DeltaTable, ColumnMapping
 from pyspark.sql import DataFrame
-import pandas as pd
 from pyspark.storagelevel import StorageLevel
 from pyspark.sql.streaming import StreamingQuery
 from pyspark.sql.streaming.state import GroupStateTimeout

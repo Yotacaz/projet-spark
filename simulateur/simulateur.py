@@ -37,13 +37,12 @@ Utilisation :
 import argparse
 import json
 import logging
-import os
 import random
 import signal
 import sys
 import time
 from datetime import datetime, timezone
-from logging.handlers import RotatingFileHandler
+# from logging.handlers import RotatingFileHandler
 from kafka import KafkaProducer
 
 # ── Gestion propre du SIGPIPE (Unix uniquement) ─────────────────────────────
@@ -340,7 +339,7 @@ def lancer_simulateur(
     _logger.info(sep)
     _logger.info(f"  Mode de sortie     : {mode.upper()}")
     _logger.info(f"  Délai entre events : [{DELAI_MIN}s – {DELAI_MAX}s]")
-    _logger.info(f"  Tunnel de conversion :")
+    _logger.info("  Tunnel de conversion :")
     for action, poids in zip(ACTION_TYPES, ACTION_POIDS):
         barre = "█" * int(poids * 24)
         _logger.info(f"    {action:<6s}  {barre:<24s}  {poids:.0%}")
