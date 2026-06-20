@@ -52,7 +52,9 @@ def build_graph_dataframes(batch_df: DataFrame):
         col("product_id").alias("dst"),
         col("action_type").alias("relationship"),
         col("timestamp"),
-        when(col("action_type") == "like",  lit(0.0)) # aime = 0, vout = price, achat = price
+        # action_type vaut "AIME" / "VOUT" / "ACHAT" (cf. simulateur/simulateur.py).
+        # AIME = simple intérêt → poids nul ; VOUT/ACHAT = poids = prix de l'article.
+        when(col("action_type") == "AIME", lit(0.0))
         .otherwise(col("price"))
         .alias("weight"),
     )

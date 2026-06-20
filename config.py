@@ -33,6 +33,10 @@ def get_spark_session() -> SparkSession:
                 [
                     "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1",
                     "io.delta:delta-spark_2.12:3.2.0",
+                    # GraphFrames — requis par le cahier des charges §3.1 pour le
+                    # calcul d'indicateurs de centralité (pageRank) et de
+                    # composants connectés (connectedComponents).
+                    "graphframes:graphframes:0.8.3-spark3.0-s_2.12",
                 ]
             ),
         )
@@ -45,28 +49,12 @@ def get_spark_session() -> SparkSession:
     )
     if spark is None:
         raise RuntimeError("Impossible de créer la SparkSession.")
+    # connectedComponents() de GraphFrames a besoin d'un checkpoint directory
+    # (il s'appuie sur l'algorithme GraphX qui checkpointe pour éviter un DAG
+    # de lignage trop profond). Sans ça, l'appel lève une exception au runtime.
+    spark.sparkContext.setCheckpointDir("checkpoints/graphframes")
     return spark
 
-
-builder: SparkSession.Builder = cast(
-    SparkSession.Builder, SparkSession.builder
-)  # for missing type hints
-
-
-# spark = (
-#     configure_spark_with_delta_pip(builder).appName("MarketplaceGraph")
-#     .config("spark.sql.shuffle.partitions", "4")
-#     .config(
-#         "spark.jars.packages",
-#         "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1, graphframes:graphframes:0.8.3-spark3.0-s_2.12, io.delta:delta-spark_2.12:3.2.0",
-#     )
-#     .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-#     .config(
-#         "spark.sql.catalog.spark_catalog",
-#         "org.apache.spark.sql.delta.catalog.DeltaCatalog",
-#     )
-#     .getOrCreate()
-# )
 
 RELATIONSHIP_SCORES = {
     "AIME": 1.0,

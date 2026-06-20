@@ -360,19 +360,27 @@ def lancer_simulateur(
                 key=event["action_type"],
                 value=event,
             )
+
+            # Mise à jour des compteurs (nécessaire pour le récap final Ctrl+C)
+            compteur += 1
+            if event["action_type"] == "ACHAT":
+                compteur_achats += 1
+
             time.sleep(1 / RATE)
 
     except KeyboardInterrupt:
         # Arrêt propre : récapitulatif final sur stderr
+        producer.flush()  # s'assurer que les derniers messages partent bien à Kafka
         taux_final = (compteur_achats / max(1, compteur)) * 100
         _logger.info(f"\n{sep}")
         _logger.info("  Simulateur arrêté proprement (Ctrl+C)")
         _logger.info(f"  Événements émis  : {compteur}")
         _logger.info(f"  Dont ACHAT       : {compteur_achats} ({taux_final:.1f}%)")
-        _logger.info(f"  Dont VOUT        : {round(compteur * 0.30):~>5} (≈30 % théorique)")
-        _logger.info(f"  Dont AIME        : {round(compteur * 0.60):~>5} (≈60 % théorique)")
+        _logger.info(f"  Dont VOUT (théo.): {round(compteur * 0.30):>5} (≈30 % théorique)")
+        _logger.info(f"  Dont AIME (théo.): {round(compteur * 0.60):>5} (≈60 % théorique)")
         _logger.info(sep)
         sys.exit(0)
+
 
 
 # ==============================================================================

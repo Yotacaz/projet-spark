@@ -37,5 +37,8 @@ derby.log
 metastore_db/
 spark-warehouse/
 
+# GraphFrames — checkpointDir requis par connectedComponents()
+checkpoints/
+
 perso
 delta

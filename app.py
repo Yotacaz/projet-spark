@@ -5,6 +5,7 @@ from graph.graph import (
     get_edge_context,
     get_best_edges,
     get_edges_and_vertices,
+    get_graph_metrics,
     to_obj,
 )
 import os
@@ -107,6 +108,29 @@ def api_stats():
             "edges": n_edges,
         }
     )
+
+
+@app.route("/api/graph-metrics")
+def api_graph_metrics():
+    """
+    Indicateurs GraphFrames : centralité (PageRank) et composants connectés.
+
+    Calcul coûteux (plusieurs itérations distribuées) — à appeler ponctuellement,
+    pas à chaque tick d'auto-refresh du dashboard.
+    """
+    try:
+        _edges_df, _vertices_df = get_edges_and_vertices()
+        top_k = int(request.args.get("top_k", 10))
+        metrics = get_graph_metrics(_edges_df, _vertices_df, top_k=top_k)
+        return jsonify(metrics)
+    except ImportError:
+        return jsonify({
+            "error": "GraphFrames n'est pas installé. "
+                     "Vérifiez que le jar graphframes:graphframes:0.8.3-spark3.0-s_2.12 "
+                     "est résolu dans spark.jars.packages (config.py)."
+        }), 500
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 # ── Serve the dashboard SPA ─────────────────────────────────────────────────

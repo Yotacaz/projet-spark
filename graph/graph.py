@@ -111,6 +111,122 @@ def get_edges_and_vertices() -> tuple[DataFrame, DataFrame]:
     return edges_df, vertices_df
 
 
+# ──────────────────────────────────────────────────────────────────────────
+# GraphFrames — indicateurs de centralité et composants connectés
+# (cahier des charges §3.1 : "Calcul d'indicateurs de centralité ou de
+# composants connectés au fil de l'eau")
+#
+# Les tables Delta vertices/edges sont déjà au format attendu par GraphFrames
+# (vertices: colonne "id" ; edges: colonnes "src"/"dst"), donc aucune
+# transformation supplémentaire n'est nécessaire avant de construire le
+# GraphFrame.
+# ──────────────────────────────────────────────────────────────────────────
+
+def build_graphframe(
+    edges_df: Optional[DataFrame] = None,
+    vertices_df: Optional[DataFrame] = None,
+):
+    """
+    Construit un GraphFrame à partir des tables Delta vertices/edges.
+
+    GraphFrames exige des doublons d'arêtes dédupliqués entre la même paire
+    (src, dst) — c'est déjà garanti ici car batch_edges_agg_df dans
+    handle_new_data() agrège par (src, dst) avant le merge Delta.
+    """
+    from graphframes import GraphFrame
+
+    if edges_df is None or vertices_df is None:
+        edges_df, vertices_df = get_edges_and_vertices()
+
+    return GraphFrame(vertices_df, edges_df)
+
+
+def compute_pagerank(
+    edges_df: Optional[DataFrame] = None,
+    vertices_df: Optional[DataFrame] = None,
+    reset_probability: float = 0.15,
+    max_iter: int = 10,
+) -> DataFrame:
+    """
+    Calcule le PageRank de chaque nœud (indicateur de centralité).
+
+    Un score élevé indique un nœud fortement connecté — par exemple un
+    produit très demandé ou un vendeur avec beaucoup d'acheteurs actifs.
+
+    Returns
+    -------
+    DataFrame avec les colonnes : id, type, pagerank
+    """
+    g = build_graphframe(edges_df, vertices_df)
+    result = g.pageRank(resetProbability=reset_probability, maxIter=max_iter)
+    return result.vertices.select("id", "type", "pagerank").orderBy(
+        F.col("pagerank").desc()
+    )
+
+
+def compute_connected_components(
+    edges_df: Optional[DataFrame] = None,
+    vertices_df: Optional[DataFrame] = None,
+) -> DataFrame:
+    """
+    Calcule les composants connectés du graphe.
+
+    Regroupe les nœuds (utilisateurs/produits/vendeurs) en clusters
+    indépendants — utile pour repérer des sous-communautés d'interactions
+    isolées du reste de la marketplace.
+
+    Note : nécessite spark.sparkContext.setCheckpointDir(), déjà configuré
+    dans config.get_spark_session().
+
+    Returns
+    -------
+    DataFrame avec les colonnes : id, type, component
+    """
+    g = build_graphframe(edges_df, vertices_df)
+    return g.connectedComponents().orderBy(F.col("component").asc())
+
+
+def get_graph_metrics(
+    edges_df: Optional[DataFrame] = None,
+    vertices_df: Optional[DataFrame] = None,
+    top_k: int = 10,
+) -> dict:
+    """
+    Calcule un résumé des métriques GraphFrames pour affichage dashboard/API.
+
+    Returns
+    -------
+    dict avec :
+        - top_pagerank : les top_k nœuds les plus centraux
+        - nb_components : nombre de composants connectés distincts
+        - largest_component_size : taille du plus grand composant
+    """
+    if edges_df is None or vertices_df is None:
+        edges_df, vertices_df = get_edges_and_vertices()
+
+    pagerank_df = compute_pagerank(edges_df, vertices_df)
+    top_pagerank = [
+        {"id": r["id"], "type": r["type"], "pagerank": float(r["pagerank"])}
+        for r in pagerank_df.limit(top_k).collect()
+    ]
+
+    components_df = compute_connected_components(edges_df, vertices_df)
+    component_sizes = (
+        components_df.groupBy("component")
+        .count()
+        .orderBy(F.col("count").desc())
+    )
+    nb_components = component_sizes.count()
+    largest = component_sizes.first()
+    largest_component_size = largest["count"] if largest else 0
+
+    return {
+        "top_pagerank": top_pagerank,
+        "nb_components": nb_components,
+        "largest_component_size": largest_component_size,
+    }
+
+
 def get_best_edges(
     edges_df: Optional[DataFrame] = None,
     vertices_df: Optional[DataFrame] = None,

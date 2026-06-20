@@ -388,6 +388,21 @@ input::placeholder { color: #555; }
       </div>
     </div>
 
+    <!-- Graph metrics (GraphFrames : PageRank + Connected Components) -->
+    <div class="sidebar-section">
+      <h2>Graph Metrics</h2>
+      <button class="btn btn-primary" onclick="loadGraphMetrics()">📊 Compute Metrics</button>
+      <div id="graph-metrics-status" style="font-size:11px;color:#555;margin-top:6px;"></div>
+      <div id="graph-metrics-result" style="margin-top:8px;font-size:12px;display:none;">
+        <div style="color:#888;margin-bottom:4px;">
+          Components: <span id="metric-nb-components" style="color:#ccc;">—</span>
+          &nbsp;·&nbsp; Largest: <span id="metric-largest-component" style="color:#ccc;">—</span>
+        </div>
+        <div style="color:#888;margin-bottom:4px;">Top PageRank:</div>
+        <ol id="metric-top-pagerank" style="margin:0;padding-left:18px;color:#ccc;"></ol>
+      </div>
+    </div>
+
     <!-- Actions -->
     <div class="sidebar-section">
       <h2>Actions</h2>
@@ -955,6 +970,39 @@ async function fetchStats() {
     document.getElementById('stat-vertices').textContent = stats.vertices.toLocaleString();
     document.getElementById('stat-edges').textContent = stats.edges.toLocaleString();
   } catch (_) {}
+}
+
+async function loadGraphMetrics() {
+  const statusEl = document.getElementById('graph-metrics-status');
+  const resultEl = document.getElementById('graph-metrics-result');
+  statusEl.textContent = '⏳ Computing PageRank & components…';
+  resultEl.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/graph-metrics?top_k=5');
+    const data = await res.json();
+
+    if (!res.ok) {
+      statusEl.textContent = `⚠️ ${data.error || 'Failed to compute metrics'}`;
+      return;
+    }
+
+    document.getElementById('metric-nb-components').textContent = data.nb_components.toLocaleString();
+    document.getElementById('metric-largest-component').textContent = data.largest_component_size.toLocaleString();
+
+    const list = document.getElementById('metric-top-pagerank');
+    list.innerHTML = '';
+    data.top_pagerank.forEach(n => {
+      const li = document.createElement('li');
+      li.textContent = `${n.id} (${n.type}) — ${n.pagerank.toFixed(3)}`;
+      list.appendChild(li);
+    });
+
+    statusEl.textContent = '';
+    resultEl.style.display = 'block';
+  } catch (err) {
+    statusEl.textContent = `⚠️ ${err.message}`;
+  }
 }
 
 // ─── Info panel ──────────────────────────────────────────────────────────

@@ -2,32 +2,25 @@
 
 ## Rôle dans le pipeline
 
-Ce script est le **premier maillon** du pipeline Big Data. Il joue le rôle d'une source externe (producteur) qui génère en continu des événements JSON simulant les interactions utilisateurs d'une plateforme de petites annonces type LeBonCoin.
+Ce script est le **premier maillon** du pipeline Big Data. Il joue le rôle d'une source externe (producteur) qui génère en continu des événements JSON simulant les interactions utilisateurs d'une plateforme de petites annonces type LeBonCoin, et les publie sur Kafka.
 
 ```
-[simulateur.py]  →  stdout / fichiers JSON  →  [PySpark Structured Streaming]
+[simulateur.py]  →  Kafka (topic "marketplace-events")  →  [PySpark Structured Streaming]
 ```
 
 ## Prérequis
 
 - Python ≥ 3.9
-- Dépendances : `pip install -r requirements.txt`
+- Kafka + ZooKeeper démarrés (`docker-compose up` à la racine du projet)
+- Dépendances : `pip install -r requirements.txt` (inclut `kafka-python` et `faker`)
 
 ## Utilisation
 
 ```bash
-# Mode stdout — pour tester ou piper vers Spark
 python simulateur.py
-
-# Mode fichier — pour Spark Structured Streaming
-python simulateur.py --mode file --output-dir /data/stream
-
-# Test rapide (5 événements)
-python simulateur.py | head -5
-
-# Aide
-python simulateur.py --help
 ```
+
+Le script tourne en boucle infinie et envoie un événement toutes les `1/RATE` secondes (`RATE = 2.0` par défaut, soit ~2 événements/seconde). Arrêt propre avec `Ctrl+C` : un récapitulatif (nombre d'événements émis, dont ACHAT) s'affiche sur `stderr`.
 
 ## Événements générés
 
@@ -59,14 +52,14 @@ simulateur.py
 ├── construire_catalogue()    — pools d'IDs + catalogue produits (1 seule fois)
 ├── choisir_action()          — tirage pondéré AIME/VOUT/ACHAT
 ├── generer_evenement()       — produit le dict JSON complet
-├── creer_writer_fichier()    — configure les fichiers rotatifs (mode file)
-├── lancer_simulateur()       — boucle infinie principale
-└── parse_args()              — arguments CLI (--mode, --output-dir)
+├── creer_producteur_kafka()  — configure le KafkaProducer (acks="all", linger_ms=10)
+├── lancer_simulateur()       — boucle infinie principale, envoi Kafka
+└── parse_args()              — arguments CLI hérités (--mode/--output-dir, non utilisés en mode Kafka)
 ```
 
 ## Notes techniques
 
-- **stdout vs stderr** : les données JSON partent sur `stdout`, les logs de diagnostic sur `stderr`. Un pipe vers Spark ne capte que les données brutes.
-- **Fichiers rotatifs** : rotation automatique à 10 Mo, 5 archives conservées, format NDJSON (Newline-Delimited JSON).
+- **Clé Kafka** : chaque message est publié avec `key=action_type`, ce qui garantit que tous les événements d'un même type (AIME/VOUT/ACHAT) atterrissent sur la même partition — utile pour préserver l'ordre par type si besoin en aval.
 - **Catalogue stable** : un produit conserve la même catégorie, le même vendeur et le même prix tout au long de la simulation.
-- **SIGPIPE géré** : le script se termine proprement en cas de pipe fermé (ex: `| head -5`), sans traceback.
+- **`producer.flush()`** est appelé à l'arrêt (`Ctrl+C`) pour garantir que les derniers messages en buffer sont bien envoyés avant la sortie du process.
+- **SIGPIPE géré** : le script se termine proprement en cas de pipe fermé, sans traceback.
