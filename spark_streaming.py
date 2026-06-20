@@ -21,9 +21,6 @@ SCHEMA = StructType([
 ])
 
 
-
-
-
 def build_graph_dataframes(batch_df: DataFrame):
     """
     Construit et retourne (vertices, edges) depuis un micro-batch.
@@ -36,12 +33,13 @@ def build_graph_dataframes(batch_df: DataFrame):
     Returns
     -------
     tuple[DataFrame, DataFrame]
-        (vertices, edges) prêts à l'emploi (GraphFrames, écriture, etc.)
+        (vertices, edges) prêts à l'emploi.
+        edges colonnes : src, dst, relationship, timestamp, price
     """
     from pyspark.sql.functions import lit, when
 
     vertices = (
-        batch_df.select(col("user_id").alias("id"),    lit("USER").alias("type"))
+        batch_df.select(col("user_id").alias("id"),     lit("USER").alias("type"))
         .union(batch_df.select(col("product_id").alias("id"), lit("PROD").alias("type")))
         .union(batch_df.select(col("seller_id").alias("id"),  lit("SEL").alias("type")))
         .dropDuplicates(["id"])
@@ -52,9 +50,9 @@ def build_graph_dataframes(batch_df: DataFrame):
         col("product_id").alias("dst"),
         col("action_type").alias("relationship"),
         col("timestamp"),
-        when(col("action_type") == "like",  lit(0.0)) # aime = 0, vout = price, achat = price
+        when(col("action_type") == "like", lit(0.0))
         .otherwise(col("price"))
-        .alias("weight"),
+        .alias("price"),
     )
 
     return vertices, edges
@@ -64,7 +62,7 @@ def make_batch_processor(
     on_graph: Optional[Callable[[DataFrame, DataFrame, int], None]] = None,
 ) -> Callable[[DataFrame, int], None]:
     from graphframes import GraphFrame
-
+ 
     def _default_on_graph(vertices: DataFrame, edges: DataFrame, epoch_id: int):
         g = GraphFrame(vertices, edges)
         print(f"\n--- [Batch {epoch_id}] Top 5 Produits les plus populaires ---")
@@ -87,6 +85,7 @@ def start_streams(
     kafka_topic: str = "marketplace-events",
     on_graph: Optional[Callable[[DataFrame, DataFrame, int], None]] = None,
     await_termination: bool = True,
+    enable_console: bool = False,
 ):
     if spark is None:
         spark = get_spark_session()
@@ -109,35 +108,34 @@ def start_streams(
         .withColumn("timestamp", col("timestamp").cast(TimestampType()))
     )
 
-    # ── Watermark + fenêtrage ────────────────────────────────────────────────
-    df_wm = df_parsed.withWatermark("timestamp", "1 minute")
-
-    agg = (
-        df_wm
-        .groupBy(window(col("timestamp"), "1 minute"), col("action_type"))
-        .agg(
-            count("*").alias("nb_events"),
-            spark_sum("price").alias("chiffre_affaires"),
-        )
-    )
-
-    # ── Query 1 : agrégations console ───────────────────────────────────────
-    q1 = (
-        agg.writeStream
-        .outputMode("update")
-        .format("console")
-        .option("truncate", "false")
-        .trigger(processingTime="10 seconds")
-        .start()
-    )
-
-    # ── Query 2 : graphe via foreachBatch ────────────────────────────────────
+    # ── Query principale : graphe via foreachBatch ───────────────────────────
     q2 = (
         df_parsed.writeStream
         .foreachBatch(make_batch_processor(on_graph))
-        .trigger(processingTime="10 seconds")
+        .trigger(processingTime="15 seconds")
         .start()
     )
+
+    # ── Query console : agrégations (optionnelle) ────────────────────────────
+    q1 = None
+    if enable_console:
+        df_wm = df_parsed.withWatermark("timestamp", "1 minute")
+        agg = (
+            df_wm
+            .groupBy(window(col("timestamp"), "1 minute"), col("action_type"))
+            .agg(
+                count("*").alias("nb_events"),
+                spark_sum("price").alias("chiffre_affaires"),
+            )
+        )
+        q1 = (
+            agg.writeStream
+            .outputMode("update")
+            .format("console")
+            .option("truncate", "false")
+            .trigger(processingTime="30 seconds")
+            .start()
+        )
 
     if await_termination:
         spark.streams.awaitAnyTermination()

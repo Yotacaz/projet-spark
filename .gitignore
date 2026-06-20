@@ -36,6 +36,6 @@ data/stream/
 derby.log
 metastore_db/
 spark-warehouse/
-
+*.log
 perso
 delta

@@ -391,7 +391,7 @@ input::placeholder { color: #555; }
     <!-- Actions -->
     <div class="sidebar-section">
       <h2>Actions</h2>
-      <button class="btn btn-primary" onclick="loadBestEdges()">🏆 Best Edges</button>
+      <button class="btn btn-primary" onclick="loadBestEdges(true)">🏆 Best Edges</button>
       <div class="form-row" style="margin-top:8px;align-items:end;">
         <div style="flex:1;">
           <div style="display:flex;align-items:center;gap:6px;">
@@ -401,8 +401,7 @@ input::placeholder { color: #555; }
         </div>
         <div style="flex:0 0 80px;">
           <select id="auto-refresh-interval" onchange="onAutoRefreshIntervalChange()" style="font-size:11px;padding:6px;">
-            <option value="5000">5s</option>
-            <option value="10000" selected>10s</option>
+            <option value="5000">15s</option>
             <option value="30000">30s</option>
             <option value="60000">60s</option>
           </select>
@@ -528,10 +527,41 @@ const DEFAULT_EDGE_COLOR = '#666';
 let network = null;
 let nodesDataSet = new vis.DataSet([]);
 let edgesDataSet = new vis.DataSet([]);
-let currentGraphData = null; // raw API response for reference
+let currentGraphData = null;
 let searchTimeout = null;
 let autoRefreshTimer = null;
-let currentView = null; // { mode: 'best-edges' | 'node' | 'edge', params: {} }
+let currentView = null;
+let statsTimer = null;
+
+let timeBetweenStatFetch = 20000; //20 seconds
+
+
+// ─── Helpers ─────────────────────────────────────────────────────────────
+function _baseNodeColor(node) {
+  return COLORS[node._type] || { background: '#888', border: '#888' };
+}
+
+function _baseEdgeColor(edge) {
+  const rel = (edge._data && edge._data.relationship) || '';
+  return EDGE_COLORS[rel] || DEFAULT_EDGE_COLOR;
+}
+
+function _syncDataSet(dataset, items) {
+  const existingIds = new Set(dataset.getIds());
+  const nextIds = new Set(items.map(item => item.id));
+
+  const removals = [];
+  existingIds.forEach(id => {
+    if (!nextIds.has(id)) removals.push(id);
+  });
+  if (removals.length) dataset.remove(removals);
+
+  if (items.length) dataset.update(items);
+}
+
+function _edgeId(edge, index) {
+  return edge.id || `e-${edge.source}--${edge.target}--${index}`;
+}
 
 // ─── Initialize vis-network ──────────────────────────────────────────────
 function initNetwork() {
@@ -584,70 +614,37 @@ function initNetwork() {
 
   network = new vis.Network(container, { nodes: nodesDataSet, edges: edgesDataSet }, options);
 
-  // ── Click node ──────────────────────────────────────────────────
   network.on('click', function (params) {
     if (params.nodes.length > 0) {
       const nodeId = params.nodes[0];
-      showNodeInfo(nodeId);
-      // Highlight node's neighbors
+      clearHighlight();
       highlightNodeNeighborhood(nodeId);
-    } else if (params.edges.length > 0) {
+      showNodeInfo(nodeId);
+      // Auto-fill node search form
+      document.getElementById('node-search').value = nodeId;
+      return;
+    }
+
+    if (params.edges.length > 0) {
       const edgeId = params.edges[0];
       const edge = edgesDataSet.get(edgeId);
       if (edge) {
-        showEdgeInfo(edge.from, edge.to);
+        clearHighlight();
         highlightEdge(edgeId);
+        showEdgeInfo(edge.from, edge.to);
+        // Auto-fill edge search form
+        document.getElementById('edge-src').value = edge.from;
+        document.getElementById('edge-dst').value = edge.to;
       }
-    } else {
-      clearHighlight();
-      showDefaultInfo();
+      return;
     }
-  });
 
-  // ── Hover node tooltip ──────────────────────────────────────────
-  network.on('hoverNode', function (params) {
-    const nodeId = params.node;
-    const node = nodesDataSet.get(nodeId);
-    if (!node) return;
-    const type = node._type || 'unknown';
-    const degree = node._degree !== undefined ? node._degree : '?';
-    network.options.nodes.font = {
-      ...network.options.nodes.font,
-      size: 11,
-    };
-    network.setOptions({
-      nodes: {
-        font: {
-          content: nodeId.length > 18 ? nodeId.slice(0, 15) + '…' : nodeId,
-        },
-      },
-    });
-  });
-
-  network.on('blurNode', function () {
-    network.setOptions({ nodes: { font: { content: undefined } } });
-  });
-
-  // ── Hover edge tooltip ──────────────────────────────────────────
-  network.on('hoverEdge', function (params) {
-    const edgeId = params.edge;
-    const edge = edgesDataSet.get(edgeId);
-    if (!edge) return;
-    const d = edge._data || {};
-    const lines = [`src → dst: ${edge.from} → ${edge.to}`];
-    if (d.score !== undefined) lines.push(`score: ${d.score}`);
-    if (d.relationship) lines.push(`type: ${d.relationship}`);
-    if (d.price !== undefined) lines.push(`price: ${d.price}`);
-    if (d.last_interaction) lines.push(`last: ${d.last_interaction}`);
-    network.setOptions({
-      interaction: { tooltipDelay: 300, hover: true },
-      edges: { font: { content: '' } },
-      tooltip: { content: lines.join('<br>') },
-    });
+    clearHighlight();
+    showDefaultInfo();
   });
 }
 
-// ─── Build vis items from API data (shared by draw + silent refresh) ────
+// ─── Build vis items from API data ───────────────────────────────────────
 function _buildGraphItems(data) {
   const degree = {};
   for (const link of data.links) {
@@ -655,16 +652,18 @@ function _buildGraphItems(data) {
     degree[link.target] = (degree[link.target] || 0) + 1;
   }
 
-  const scores = data.links.map(l => l.score).filter(s => s !== undefined && s !== null);
+  const scores = data.links
+    .map(l => Number(l.score))
+    .filter(s => Number.isFinite(s));
   const minScore = scores.length > 0 ? Math.min(...scores) : 0;
   const maxScore = scores.length > 0 ? Math.max(...scores) : 1;
   const scoreRange = maxScore - minScore || 1;
 
   const nodes = data.nodes.map(n => ({
     id: n.id,
-    label: n.id,
+    label: n.label || n.id,
     title: `id: ${n.id}<br>type: ${n.type || 'unknown'}<br>degree: ${degree[n.id] || 0}`,
-    color: COLORS[n.type] || { background: '#888', border: '#888' },
+    color: _baseNodeColor({ _type: n.type }),
     value: Math.max(5, Math.min(40, (degree[n.id] || 0) * 3)),
     shape: n.type === 'USER' ? 'dot' : n.type === 'PROD' ? 'square' : 'diamond',
     _type: n.type || 'unknown',
@@ -673,14 +672,29 @@ function _buildGraphItems(data) {
 
   const edges = data.links.map((e, i) => {
     const raw = e.data || e;
-    const relationship = raw.relationship || raw.title || '';
-    const score = e.score !== undefined ? e.score : (raw.score || 0);
+    const relationship = raw.relationship || '';
+    const score = Number(e.score ?? raw.score ?? 0);
     const widthVal = 0.5 + 3.5 * ((score - minScore) / scoreRange);
+
+    // Build tooltip with all relevant info
+    let tooltip = `score: ${score.toFixed(2)}<br>type: ${relationship || 'unknown'}`;
+    for (const action of ['AIME', 'VOUT', 'ACHAT']) {
+      if (raw[action] !== undefined && raw[action] !== null && Number(raw[action]) > 0) {
+        tooltip += `<br>${action}: ${raw[action]}`;
+      }
+    }
+    if (raw.price !== undefined && raw.price !== null) {
+      tooltip += `<br>price: ${raw.price}`;
+    }
+    if (raw.last_interaction !== undefined && raw.last_interaction !== null) {
+      tooltip += `<br>last: ${raw.last_interaction}`;
+    }
+
     return {
-      id: `e-${i}`,
+      id: _edgeId(e, i),
       from: e.source,
       to: e.target,
-      label: score.toFixed(1),
+      label: Number.isFinite(score) ? score.toFixed(1) : '',
       value: score,
       width: widthVal,
       color: {
@@ -689,19 +703,18 @@ function _buildGraphItems(data) {
         hover: '#fff',
         opacity: 0.85,
       },
-      title: `score: ${score}<br>type: ${relationship}`,
+      title: tooltip,
       font: { size: Math.min(12, 8 + widthVal * 2) },
       _data: raw,
     };
   });
 
-  return { nodes, edges, minScore, maxScore };
+  return { nodes, edges };
 }
 
-// ─── Load graph data into vis (first load or user action) ───────────────
+// ─── Draw / refresh graph ────────────────────────────────────────────────
 function drawGraph(data) {
   hideLoading();
-
   const items = _buildGraphItems(data);
 
   nodesDataSet.clear();
@@ -710,62 +723,50 @@ function drawGraph(data) {
   edgesDataSet.add(items.edges);
 
   currentGraphData = data;
+  showDefaultInfo();
 
-  // Stabilise then turn off physics for performance
-  network.setOptions({ physics: { stabilization: { iterations: 300 } } });
-  network.setData({ nodes: nodesDataSet, edges: edgesDataSet });
+  network.setOptions({ physics: { enabled: true, stabilization: { iterations: 300 } } });
+  network.stabilize(150);
 
   setTimeout(() => {
-    network.setOptions({ physics: { enabled: false } });
-  }, 2000);
+    if (network) {
+      network.setOptions({ physics: { enabled: false } });
+    }
+  }, 1500);
 }
 
-// ─── Silent data swap for auto-refresh (preserves camera & physics) ────
 function drawGraphSilent(data) {
-  // Save viewport state
   const viewPos = network.getViewPosition();
   const scale = network.getScale();
 
-  // Ensure physics is OFF so it doesn't jump
-  network.setOptions({ physics: { enabled: false } });
-
   const items = _buildGraphItems(data);
-
-  // Replace DataSet contents in-place without clearing first,
-  // so vis-network doesn't see an empty state and reset the viewport.
-  const existingNodeIds = new Set(nodesDataSet.getIds());
-  const newNodeIds = new Set(items.nodes.map(n => n.id));
-
-  // Remove nodes/edges no longer present
-  for (const id of existingNodeIds) {
-    if (!newNodeIds.has(id)) nodesDataSet.remove(id);
-  }
-  const existingEdgeIds = new Set(edgesDataSet.getIds());
-  const newEdgeIds = new Set(items.edges.map(e => e.id));
-  for (const id of existingEdgeIds) {
-    if (!newEdgeIds.has(id)) edgesDataSet.remove(id);
-  }
-
-  // Update existing items in-place
-  nodesDataSet.update(items.nodes.filter(n => existingNodeIds.has(n.id)));
-  edgesDataSet.update(items.edges.filter(e => existingEdgeIds.has(e.id)));
-
-  // Add new items
-  const addNodes = items.nodes.filter(n => !existingNodeIds.has(n.id));
-  const addEdges = items.edges.filter(e => !existingEdgeIds.has(e.id));
-  if (addNodes.length) nodesDataSet.add(addNodes);
-  if (addEdges.length) edgesDataSet.add(addEdges);
+  _syncDataSet(nodesDataSet, items.nodes);
+  _syncDataSet(edgesDataSet, items.edges);
 
   currentGraphData = data;
 
-  // Restore camera immediately
-  network.moveTo({ position: viewPos, scale: scale });
+  // Enable physics briefly to position new nodes, then restore view
+  network.setOptions({ physics: { enabled: true, stabilization: { iterations: 200 } } });
+  network.stabilize(100);
+
+  setTimeout(() => {
+    if (network) {
+      network.setOptions({ physics: { enabled: false } });
+      network.moveTo({ position: viewPos, scale: scale });
+    }
+  }, 500);
 }
 
 // ─── Auto-refresh state machine ──────────────────────────────────────────
-
 function _getAutoRefreshInterval() {
-  return parseInt(document.getElementById('auto-refresh-interval').value, 10);
+  return parseInt(document.getElementById('auto-refresh-interval').value, 15);
+}
+
+function _clearAutoRefresh() {
+  if (autoRefreshTimer) {
+    clearTimeout(autoRefreshTimer);
+    autoRefreshTimer = null;
+  }
 }
 
 function _scheduleAutoRefresh() {
@@ -779,13 +780,6 @@ function _scheduleAutoRefresh() {
   document.getElementById('auto-refresh-status').textContent = `⏳ Refreshing ${modeLabel} every ${interval / 1000}s…`;
 }
 
-function _clearAutoRefresh() {
-  if (autoRefreshTimer) {
-    clearTimeout(autoRefreshTimer);
-    autoRefreshTimer = null;
-  }
-}
-
 async function _doAutoRefresh() {
   if (!currentView) {
     _clearAutoRefresh();
@@ -794,12 +788,9 @@ async function _doAutoRefresh() {
   }
 
   try {
-    // First refresh the backend data
-    await fetch('/api/refresh');
-
-    // Then re-fetch the current view (silently — no loading overlay)
     const { mode, params } = currentView;
     let url = '';
+
     if (mode === 'best-edges') {
       url = '/api/best-edges?limit=100';
     } else if (mode === 'node') {
@@ -811,15 +802,14 @@ async function _doAutoRefresh() {
       if (params.maxEdges) url += `&max_edges=${params.maxEdges}`;
     }
 
-    const res = await fetch(url);
+    url += (url.includes('?') ? '&' : '?') + 'force_reload=1';
+
+    const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
-    // Swap data silently — no loading overlay, preserves camera & physics
     drawGraphSilent(data);
-    fetchStats();
 
-    // Restore info panel for the current view
     if (mode === 'best-edges') {
       showDefaultInfo();
     } else if (mode === 'node') {
@@ -831,7 +821,6 @@ async function _doAutoRefresh() {
     console.warn('Auto-refresh failed:', err.message);
   }
 
-  // Re-schedule
   _scheduleAutoRefresh();
 }
 
@@ -858,17 +847,20 @@ function _setCurrentView(mode, params) {
   }
 }
 
-// ─── API calls ───────────────────────────────────────────────────────────
+// ─── Stats Timer ─────────────────────────────────────────────────────────
+// Note: startStatsTimer() is called in init to fetch stats immediately and periodically
 
-async function loadBestEdges() {
+// ─── API calls ───────────────────────────────────────────────────────────
+async function loadBestEdges(shouldFetchStats = false) {
   showLoading('🏆 Loading best edges…');
   try {
     const res = await fetch('/api/best-edges?limit=100');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     drawGraph(data);
-    showDefaultInfo();
-    fetchStats();
+    if (shouldFetchStats) {
+      fetchStats();
+    }
     _setCurrentView('best-edges', {});
   } catch (err) {
     showError(`Failed to load best edges: ${err.message}`);
@@ -957,8 +949,20 @@ async function fetchStats() {
   } catch (_) {}
 }
 
-// ─── Info panel ──────────────────────────────────────────────────────────
+function startStatsTimer() {
+  _clearStatsTimer();
+  fetchStats(); // Fetch immediately
+  statsTimer = setInterval(fetchStats, timeBetweenStatFetch);
+}
 
+function _clearStatsTimer() {
+  if (statsTimer) {
+    clearInterval(statsTimer);
+    statsTimer = null;
+  }
+}
+
+// ─── Info panel ──────────────────────────────────────────────────────────
 function showNodeInfo(nodeId) {
   const data = currentGraphData;
   if (!data) return;
@@ -967,26 +971,53 @@ function showNodeInfo(nodeId) {
     document.getElementById('info-panel').innerHTML = `<span class="info-title">Node: ${nodeId}</span> (no data)`;
     return;
   }
-  // Compute degree from current graph
+
   const degree = data.links.filter(e => e.source === nodeId || e.target === nodeId).length;
 
   let html = `<div class="info-title">📌 Node: ${node.id}</div>`;
   html += `<span class="info-key">type:</span> <span class="info-val">${node.type || 'unknown'}</span><br>`;
   html += `<span class="info-key">degree:</span> <span class="info-val">${degree}</span>`;
+  
+  // Display label if different from id
+  if (node.label && node.label !== node.id) {
+    html += `<br><span class="info-key">label:</span> <span class="info-val">${node.label}</span><br>`;
+  }
 
-  // Show weighted breakdown by relationship type
   const relCounts = {};
+  const actionTotals = { AIME: 0, VOUT: 0, ACHAT: 0 };
+  
   for (const e of data.links) {
     if (e.source === nodeId || e.target === nodeId) {
       const rel = (e.data && e.data.relationship) || 'unknown';
       relCounts[rel] = (relCounts[rel] || 0) + 1;
+      
+      // Sum action counts from connected edges
+      const raw = e.data || e;
+      for (const action of ['AIME', 'VOUT', 'ACHAT']) {
+        if (raw[action] !== undefined && raw[action] !== null) {
+          actionTotals[action] += Number(raw[action]) || 0;
+        }
+      }
     }
   }
+
   if (Object.keys(relCounts).length > 0) {
     html += '<br><br><span class="info-key">edge breakdown:</span><br>';
     for (const [rel, count] of Object.entries(relCounts)) {
       const color = EDGE_COLORS[rel] || '#888';
       html += `<span style="color:${color};font-weight:600;">▸</span> ${rel}: ${count}<br>`;
+    }
+  }
+  
+  // Display total action counts
+  const totalActions = Object.values(actionTotals).reduce((a, b) => a + b, 0);
+  if (totalActions > 0) {
+    html += '<br><span class="info-key">total actions:</span><br>';
+    for (const [action, count] of Object.entries(actionTotals)) {
+      if (count > 0) {
+        const color = EDGE_COLORS[action] || '#888';
+        html += `<span style="color:${color};font-weight:600;">▸</span> ${action}: ${count}<br>`;
+      }
     }
   }
 
@@ -1004,19 +1035,47 @@ function showEdgeInfo(src, dst) {
   const raw = link.data || link;
 
   let html = `<div class="info-title">📎 Edge: ${src} → ${dst}</div>`;
-  const fields = ['relationship', 'score', 'price', 'last_interaction'];
-  for (const f of fields) {
+  
+  // Display relationship type with color
+  const relationship = raw.relationship || 'unknown';
+  const relColor = EDGE_COLORS[relationship] || '#888';
+  html += `<span class="info-key">relationship:</span> <span class="info-val" style="color:${relColor};font-weight:600;">${relationship}</span><br>`;
+  
+  // Display score
+  if (raw.score !== undefined && raw.score !== null) {
+    html += `<span class="info-key">score:</span> <span class="info-val">${Number(raw.score).toFixed(2)}</span><br>`;
+  }
+  
+  // Display all action type counts with their colors
+  const actionTypes = ['AIME', 'VOUT', 'ACHAT'];
+  let hasActions = false;
+  for (const action of actionTypes) {
+    if (raw[action] !== undefined && raw[action] !== null && Number(raw[action]) > 0) {
+      hasActions = true;
+      const actionColor = EDGE_COLORS[action] || '#888';
+      html += `<span class="info-key">${action}:</span> <span class="info-val" style="color:${actionColor};font-weight:600;">${Number(raw[action])}</span><br>`;
+    }
+  }
+  
+  // Display other fields
+  const otherFields = ['price', 'last_interaction'];
+  for (const f of otherFields) {
     if (raw[f] !== undefined && raw[f] !== null) {
       html += `<span class="info-key">${f}:</span> <span class="info-val">${raw[f]}</span><br>`;
     }
   }
 
-  // Also show the source and target node info
   const srcNode = data.nodes.find(n => n.id === src);
   const dstNode = data.nodes.find(n => n.id === dst);
-  html += '<br>';
-  html += `<span class="info-key">source type:</span> <span class="info-val">${srcNode ? srcNode.type : '?'}</span><br>`;
-  html += `<span class="info-key">target type:</span> <span class="info-val">${dstNode ? dstNode.type : '?'}</span>`;
+  if (srcNode || dstNode) {
+    html += '<br>';
+    if (srcNode) {
+      html += `<span class="info-key">source type:</span> <span class="info-val">${srcNode.type || '?'}</span><br>`;
+    }
+    if (dstNode) {
+      html += `<span class="info-key">target type:</span> <span class="info-val">${dstNode.type || '?'}</span>`;
+    }
+  }
 
   document.getElementById('info-panel').innerHTML = html;
 }
@@ -1047,58 +1106,88 @@ function showError(msg) {
 }
 
 // ─── Highlight / clear ───────────────────────────────────────────────────
+function clearHighlight() {
+  if (!network) return;
+
+  const nodeUpdates = [];
+  nodesDataSet.forEach(n => {
+    nodeUpdates.push({
+      id: n.id,
+      color: { ..._baseNodeColor(n), opacity: 1.0 },
+      font: { color: '#ccc' },
+    });
+  });
+
+  const edgeUpdates = [];
+  edgesDataSet.forEach(e => {
+    const col = _baseEdgeColor(e);
+    edgeUpdates.push({
+      id: e.id,
+      color: { color: col, highlight: '#fff', hover: '#fff', opacity: 0.85 },
+    });
+  });
+
+  if (nodeUpdates.length) nodesDataSet.update(nodeUpdates);
+  if (edgeUpdates.length) edgesDataSet.update(edgeUpdates);
+}
 
 function highlightNodeNeighborhood(nodeId) {
   if (!network) return;
-  const allNodes = nodesDataSet.getIds();
-  const allEdges = edgesDataSet.getIds();
-  const connectedEdges = network.getConnectedEdges(nodeId);
-  const connectedNodes = network.getConnectedNodes(nodeId);
+  const connectedEdges = new Set(network.getConnectedEdges(nodeId));
+  const connectedNodes = new Set(network.getConnectedNodes(nodeId));
+  connectedNodes.add(nodeId);
 
-  const connectedSet = new Set(connectedNodes);
-  connectedSet.add(nodeId);
-  const edgeSet = new Set(connectedEdges);
-
-  // Dim everything
+  const nodeUpdates = [];
   nodesDataSet.forEach(n => {
-    if (!connectedSet.has(n.id)) {
-      nodesDataSet.update({ id: n.id, color: { ...n.color, opacity: 0.15 }, font: { color: '#444' } });
-    }
+    const active = connectedNodes.has(n.id);
+    nodeUpdates.push({
+      id: n.id,
+      color: { ..._baseNodeColor(n), opacity: active ? 1.0 : 0.15 },
+      font: { color: active ? '#ccc' : '#444' },
+    });
   });
+
+  const edgeUpdates = [];
   edgesDataSet.forEach(e => {
-    if (!edgeSet.has(e.id)) {
-      edgesDataSet.update({ id: e.id, color: { ...e.color, opacity: 0.08 } });
-    }
+    const active = connectedEdges.has(e.id);
+    const col = _baseEdgeColor(e);
+    edgeUpdates.push({
+      id: e.id,
+      color: { color: col, highlight: '#fff', hover: '#fff', opacity: active ? 0.85 : 0.08 },
+    });
   });
+
+  nodesDataSet.update(nodeUpdates);
+  edgesDataSet.update(edgeUpdates);
 }
 
 function highlightEdge(edgeId) {
   if (!network) return;
-  edgesDataSet.forEach(e => {
-    if (e.id !== edgeId) {
-      edgesDataSet.update({ id: e.id, color: { ...e.color, opacity: 0.08 } });
-    }
-  });
-  nodesDataSet.forEach(n => {
-    nodesDataSet.update({ id: n.id, color: { ...n.color, opacity: 0.15 }, font: { color: '#444' } });
-  });
-}
 
-function clearHighlight() {
-  if (!network) return;
-  nodesDataSet.forEach(n => {
-    const col = COLORS[n._type] || { background: '#888', border: '#888' };
-    nodesDataSet.update({ id: n.id, color: { ...col, opacity: 1.0 }, font: { color: '#ccc' } });
-  });
+  const edgeUpdates = [];
   edgesDataSet.forEach(e => {
-    const rel = (e._data && e._data.relationship) || '';
-    const col = EDGE_COLORS[rel] || DEFAULT_EDGE_COLOR;
-    edgesDataSet.update({ id: e.id, color: { color: col, highlight: '#fff', hover: '#fff', opacity: 0.85 } });
+    const active = e.id === edgeId;
+    const col = _baseEdgeColor(e);
+    edgeUpdates.push({
+      id: e.id,
+      color: { color: col, highlight: '#fff', hover: '#fff', opacity: active ? 0.95 : 0.08 },
+    });
   });
+
+  const nodeUpdates = [];
+  nodesDataSet.forEach(n => {
+    nodeUpdates.push({
+      id: n.id,
+      color: { ..._baseNodeColor(n), opacity: 0.15 },
+      font: { color: '#444' },
+    });
+  });
+
+  edgesDataSet.update(edgeUpdates);
+  nodesDataSet.update(nodeUpdates);
 }
 
 // ─── Loading overlay ──────────────────────────────────────────────────────
-
 function showLoading(msg) {
   const overlay = document.getElementById('loading-overlay');
   overlay.textContent = msg || '⏳ Loading graph data…';
@@ -1110,9 +1199,9 @@ function hideLoading() {
 }
 
 // ─── Init ────────────────────────────────────────────────────────────────
-
 initNetwork();
-loadBestEdges();
+startStatsTimer(); // Start periodic stats fetching (immediate first fetch)
+loadBestEdges(true);
 </script>
 </body>
 </html>

@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from functools import reduce
@@ -16,10 +15,10 @@ from config import (
     EDGES_PATH,
     EDGES_RAW_PATH,
     VERTICES_RAW_PATH,
+    SAVE_RAW_DATA,
 )
 
 spark = get_spark_session()
-
 
 AGGREGATION_FUNC = [
     F.sum(F.when(F.col("relationship") == event_type, 1).otherwise(0)).alias(event_type)
@@ -30,7 +29,6 @@ UPDATE_SET: ColumnMapping = {
     event_type: (F.col(f"target.{event_type}") + F.col(f"source.{event_type}"))
     for event_type in EVENT_TYPE
 }
-
 UPDATE_SET["last_interaction"] = F.greatest(
     F.col("target.last_interaction"), F.col("source.last_interaction")
 )
@@ -42,73 +40,118 @@ score_expr = reduce(
     F.col(EVENT_TYPE[0]) * RELATIONSHIP_SCORES[EVENT_TYPE[0]],
 )
 
-global _edges_df, _vertices_df
 _edges_df: Optional[DataFrame] = None
 _vertices_df: Optional[DataFrame] = None
+
+_delta_table_cache: dict[str, DeltaTable | None] = {}
+
+
+def _get_delta_table(path: str) -> DeltaTable | None:
+    """Retourne le DeltaTable depuis le cache ; effectue le check filesystem une seule fois."""
+    if path not in _delta_table_cache:
+        _delta_table_cache[path] = (
+            DeltaTable.forPath(spark, path)
+            if DeltaTable.isDeltaTable(spark, path)
+            else None
+        )
+    return _delta_table_cache[path]
+
+
+def _register_delta_table(path: str) -> DeltaTable:
+    """Enregistre dans le cache après une première écriture et retourne l'instance."""
+    table = DeltaTable.forPath(spark, path)
+    _delta_table_cache[path] = table
+    return table
+
+
+def invalidate_graph_cache() -> None:
+    global _edges_df, _vertices_df
+    _edges_df = None
+    _vertices_df = None
+
+
+def get_edges_and_vertices(force_reload: bool = False) -> tuple[DataFrame, DataFrame]:
+    global _edges_df, _vertices_df
+    if force_reload or _edges_df is None:
+        _edges_df = spark.read.format("delta").load(EDGES_PATH)
+    if force_reload or _vertices_df is None:
+        _vertices_df = spark.read.format("delta").load(VERTICES_PATH)
+    return _edges_df, _vertices_df
+
+
+def refresh_edges_and_vertices() -> tuple[DataFrame, DataFrame]:
+    """Force a reload of the Delta-backed graph tables."""
+    invalidate_graph_cache()
+    return get_edges_and_vertices(force_reload=True)
+
+
 def handle_new_data(
     new_vertices_df: DataFrame, new_edges_df: DataFrame, epoch_id: int
 ) -> None:
     """Insert/merge new vertices and edges into Delta tables."""
-    global _edges_df, _vertices_df
-    _edges_df = None
-    _vertices_df = None
-    new_edges_df.withColumn("epoch_id", F.lit(epoch_id)).write.format("delta").mode(
-        "append"
-    ).save(EDGES_RAW_PATH)
+    from pyspark.storagelevel import StorageLevel
 
-    new_vertices_df.withColumn("epoch_id", F.lit(epoch_id)).write.format("delta").mode(
-        "append"
-    ).save(VERTICES_RAW_PATH)
+    invalidate_graph_cache()
 
-    assert score_expr is not None, "score_expr should not be None"
-    batch_edges_agg_df = (
-        new_edges_df.groupBy("src", "dst")
-        .agg(*AGGREGATION_FUNC, F.max("timestamp").alias("last_interaction"))
-        .withColumn("score", score_expr)
-    )
+    if SAVE_RAW_DATA:
+        new_vertices_df = new_vertices_df.persist(StorageLevel.MEMORY_AND_DISK)
+        new_edges_df = new_edges_df.persist(StorageLevel.MEMORY_AND_DISK)
 
-    if DeltaTable.isDeltaTable(spark, VERTICES_PATH):
-        vertices_table = DeltaTable.forPath(spark, VERTICES_PATH)
-        (
-            vertices_table.alias("t")
-            .merge(new_vertices_df.alias("s"), "t.id = s.id")
-            .whenMatchedUpdate(set={"type": "s.type"})
-            .whenNotMatchedInsert(values={"id": "s.id", "type": "s.type"})
-            .execute()
+    try:
+        if SAVE_RAW_DATA:
+            new_edges_df.withColumn("epoch_id", F.lit(epoch_id)).write.format("delta").mode(
+                "append"
+            ).save(EDGES_RAW_PATH)
+
+            new_vertices_df.withColumn("epoch_id", F.lit(epoch_id)).write.format("delta").mode(
+                "append"
+            ).save(VERTICES_RAW_PATH)
+
+        assert score_expr is not None, "score_expr should not be None"
+        batch_edges_agg_df = (
+            new_edges_df.groupBy("src", "dst")
+            .agg(*AGGREGATION_FUNC, F.max("timestamp").alias("last_interaction"))
+            .withColumn("score", score_expr)
+            .persist(StorageLevel.MEMORY_AND_DISK)
         )
-    else:
-        new_vertices_df.write.format("delta").mode("overwrite").save(VERTICES_PATH)
+        try:
+            # ── Vertices ─────────────────────────────────────────────────────
+            vertices_table = _get_delta_table(VERTICES_PATH)
+            if vertices_table is not None:
+                (
+                    vertices_table.alias("t")
+                    .merge(new_vertices_df.alias("s"), "t.id = s.id")
+                    .whenMatchedUpdate(set={"type": "s.type"})
+                    .whenNotMatchedInsert(values={"id": "s.id", "type": "s.type"})
+                    .execute()
+                )
+            else:
+                new_vertices_df.write.format("delta").mode("overwrite").save(VERTICES_PATH)
+                _register_delta_table(VERTICES_PATH)
 
-    if DeltaTable.isDeltaTable(spark, EDGES_PATH):
-        edges_table = DeltaTable.forPath(spark, EDGES_PATH)
-        (
-            edges_table.alias("target")
-            .merge(
-                batch_edges_agg_df.alias("source"),
-                "target.src = source.src AND target.dst = source.dst",
-            )
-            .whenMatchedUpdate(set=UPDATE_SET)
-            .whenNotMatchedInsertAll()
-            .execute()
-        )
-    else:
-        batch_edges_agg_df.write.format("delta").mode("overwrite").save(EDGES_PATH)
+            # ── Edges ─────────────────────────────────────────────────────────
+            edges_table = _get_delta_table(EDGES_PATH)
+            if edges_table is not None:
+                (
+                    edges_table.alias("target")
+                    .merge(
+                        batch_edges_agg_df.alias("source"),
+                        "target.src = source.src AND target.dst = source.dst",
+                    )
+                    .whenMatchedUpdate(set=UPDATE_SET)
+                    .whenNotMatchedInsertAll()
+                    .execute()
+                )
+            else:
+                batch_edges_agg_df.write.format("delta").mode("overwrite").save(EDGES_PATH)
+                _register_delta_table(EDGES_PATH)
 
-
-def get_edges_and_vertices() -> tuple[DataFrame, DataFrame]:
-    """Return the Delta edges and vertices dataframes."""
-    if not DeltaTable.isDeltaTable(spark, EDGES_PATH):
-        raise RuntimeError("La table Delta des edges n'existe pas.")
-    if not DeltaTable.isDeltaTable(spark, VERTICES_PATH):
-        raise RuntimeError("La table Delta des vertices n'existe pas.")
-    global _edges_df, _vertices_df
-    if _edges_df is None:
-        _edges_df = spark.read.format("delta").load(EDGES_PATH)
-    if _vertices_df is None:
-        _vertices_df = spark.read.format("delta").load(VERTICES_PATH)
-    edges_df = _edges_df
-    vertices_df = _vertices_df
-    return edges_df, vertices_df
+        finally:
+            batch_edges_agg_df.unpersist()
+    finally:
+        if SAVE_RAW_DATA:
+            new_vertices_df.unpersist()
+            new_edges_df.unpersist()
 
 
 def get_best_edges(
@@ -121,9 +164,9 @@ def get_best_edges(
         edges_df, vertices_df = get_edges_and_vertices()
 
     best_edges_df = (
-        edges_df.orderBy(F.col("score").desc(), F.col("last_interaction").desc())
+        edges_df.select("src", "dst", "score", *EVENT_TYPE, "last_interaction")
+        .orderBy(F.col("score").desc(), F.col("last_interaction").desc())
         .limit(limit)
-        .select("src", "dst", "score", *EVENT_TYPE, "last_interaction")
     )
 
     used_ids_df = (
@@ -133,6 +176,62 @@ def get_best_edges(
     )
     vertices_used_df = vertices_df.join(used_ids_df, "id", "inner")
     return best_edges_df, vertices_used_df
+
+
+def _expand_frontier(
+    edges_df: DataFrame,
+    frontier_df: DataFrame,
+    direction: Literal["both", "out", "in"],
+) -> DataFrame:
+    """Return the next layer of node ids from a frontier."""
+    frontier = F.broadcast(frontier_df)
+
+    if direction == "out":
+        return (
+            edges_df.join(frontier, edges_df.src == frontier.id, "inner")
+            .select(edges_df.dst.alias("id"))
+            .distinct()
+        )
+    if direction == "in":
+        return (
+            edges_df.join(frontier, edges_df.dst == frontier.id, "inner")
+            .select(edges_df.src.alias("id"))
+            .distinct()
+        )
+
+    out_nodes = (
+        edges_df.join(frontier, edges_df.src == frontier.id, "inner")
+        .select(edges_df.dst.alias("id"))
+    )
+    in_nodes = (
+        edges_df.join(frontier, edges_df.dst == frontier.id, "inner")
+        .select(edges_df.src.alias("id"))
+    )
+    return out_nodes.unionByName(in_nodes).distinct()
+
+
+def _edges_touching_nodes(
+    edges_df: DataFrame,
+    nodes_df: DataFrame,
+    direction: Literal["both", "out", "in"],
+) -> DataFrame:
+    """Return edges connected to a node frontier, respecting direction."""
+    nodes = F.broadcast(nodes_df)
+
+    if direction == "out":
+        return edges_df.join(nodes, edges_df.src == nodes.id, "inner").select(
+            *[F.col(c) for c in edges_df.columns]
+        )
+    if direction == "in":
+        return edges_df.join(nodes, edges_df.dst == nodes.id, "inner").select(
+            *[F.col(c) for c in edges_df.columns]
+        )
+
+    return edges_df.join(
+        nodes,
+        (edges_df.src == nodes.id) | (edges_df.dst == nodes.id),
+        "inner",
+    ).select(*[F.col(c) for c in edges_df.columns])
 
 
 def get_node_neighbors(
@@ -152,51 +251,57 @@ def get_node_neighbors(
     if edges_df is None or vertices_df is None:
         edges_df, vertices_df = get_edges_and_vertices()
 
-    sub_edges = edges_df
     frontier = vertices_df.filter(F.col("id") == node_id).select("id")
+    if frontier.limit(1).collect() == []:
+        empty_edges = edges_df.limit(0)
+        empty_vertices = vertices_df.limit(0)
+        return empty_edges, empty_vertices
 
+    filtered_edges = edges_df
     if min_score is not None:
-        sub_edges = sub_edges.filter(F.col("score") >= F.lit(min_score))
+        filtered_edges = filtered_edges.filter(F.col("score") >= F.lit(min_score))
 
     if direction == "out":
-        sub_edges = sub_edges.filter(F.col("src") == F.lit(node_id))
+        filtered_edges = filtered_edges.filter(F.col("src") == F.lit(node_id))
     elif direction == "in":
-        sub_edges = sub_edges.filter(F.col("dst") == F.lit(node_id))
+        filtered_edges = filtered_edges.filter(F.col("dst") == F.lit(node_id))
     else:
-        sub_edges = sub_edges.filter((F.col("src") == F.lit(node_id)) | (F.col("dst") == F.lit(node_id)))
+        filtered_edges = filtered_edges.filter(
+            (F.col("src") == F.lit(node_id)) | (F.col("dst") == F.lit(node_id))
+        )
 
-    if hops > 1:
-        # Iteratively expand the set of vertices by joining on src/dst.
-        current_nodes = frontier
-        collected_edges = sub_edges
+    if hops <= 1:
+        sub_edges = filtered_edges
+        if max_edges is not None:
+            sub_edges = sub_edges.orderBy(F.col("score").desc(), F.col("last_interaction").desc()).limit(max_edges)
+        used_ids_df = (
+            sub_edges.select(F.col("src").alias("id"))
+            .unionByName(sub_edges.select(F.col("dst").alias("id")))
+            .unionByName(frontier)
+            .distinct()
+        )
+        sub_vertices = vertices_df.join(used_ids_df, "id", "inner")
+        return sub_edges, sub_vertices
 
-        for _ in range(hops - 1):
-            next_nodes = (
-                edges_df.join(current_nodes, edges_df.src == current_nodes.id, "inner")
-                .select(edges_df.dst.alias("id"))
-                .unionByName(
-                    edges_df.join(current_nodes, edges_df.dst == current_nodes.id, "inner")
-                    .select(edges_df.src.alias("id"))
-                )
-                .distinct()
-            )
-            if min_score is not None:
-                next_edges = edges_df.filter(F.col("score") >= F.lit(min_score))
-            else:
-                next_edges = edges_df
-            collected_edges = (
-                collected_edges.unionByName(
-                    next_edges.join(next_nodes, (next_edges.src == next_nodes.id) | (next_edges.dst == next_nodes.id), "inner")
-                    .select(collected_edges.columns)
-                )
-                .dropDuplicates(["src", "dst"])
-            )
-            current_nodes = current_nodes.unionByName(next_nodes).distinct()
+    current_nodes = frontier
+    collected_edges = filtered_edges
 
-        sub_edges = collected_edges
+    for _ in range(hops - 1):
+        next_nodes = _expand_frontier(edges_df, current_nodes, direction)
+        if min_score is not None:
+            next_edges_pool = edges_df.filter(F.col("score") >= F.lit(min_score))
+        else:
+            next_edges_pool = edges_df
 
+        next_edges = _edges_touching_nodes(next_edges_pool, next_nodes, direction)
+        collected_edges = collected_edges.unionByName(next_edges).dropDuplicates(
+            ["src", "dst"]
+        )
+        current_nodes = current_nodes.unionByName(next_nodes).distinct()
+
+    sub_edges = collected_edges
     if max_edges is not None:
-        sub_edges = sub_edges.orderBy(F.col("score").desc()).limit(max_edges)
+        sub_edges = sub_edges.orderBy(F.col("score").desc(), F.col("last_interaction").desc()).limit(max_edges)
 
     used_ids_df = (
         sub_edges.select(F.col("src").alias("id"))
@@ -227,19 +332,31 @@ def get_edge_context(
 
     selected = edges_df.filter((F.col("src") == F.lit(src)) & (F.col("dst") == F.lit(dst)))
 
-    if selected.count() == 0:
+    if selected.limit(1).collect() == []:
         raise ValueError(f"Edge ({src}, {dst}) not found.")
 
     node_a_edges, node_a_vertices = get_node_neighbors(
-        src, edges_df=edges_df, vertices_df=vertices_df, hops=hops, min_score=min_score, max_edges=max_edges
+        src,
+        edges_df=edges_df,
+        vertices_df=vertices_df,
+        hops=hops,
+        min_score=min_score,
+        max_edges=max_edges,
     )
     node_b_edges, node_b_vertices = get_node_neighbors(
-        dst, edges_df=edges_df, vertices_df=vertices_df, hops=hops, min_score=min_score, max_edges=max_edges
+        dst,
+        edges_df=edges_df,
+        vertices_df=vertices_df,
+        hops=hops,
+        min_score=min_score,
+        max_edges=max_edges,
     )
 
-    sub_edges = node_a_edges.unionByName(node_b_edges).unionByName(selected).dropDuplicates(["src", "dst"])
+    sub_edges = (
+        node_a_edges.unionByName(node_b_edges).unionByName(selected).dropDuplicates(["src", "dst"])
+    )
     if max_edges is not None:
-        sub_edges = sub_edges.orderBy(F.col("score").desc()).limit(max_edges)
+        sub_edges = sub_edges.orderBy(F.col("score").desc(), F.col("last_interaction").desc()).limit(max_edges)
 
     used_ids_df = (
         sub_edges.select(F.col("src").alias("id"))
@@ -259,30 +376,32 @@ def to_obj(edges_df: DataFrame, vertices_df: DataFrame) -> dict:
     This is useful for exporting to JS/HTML viewers.
     """
     nodes = []
-    for row in vertices_df.select("id", *([c for c in vertices_df.columns if c != "id"])).toLocalIterator():
-        label = row["id"]
-        if "label" in row.asDict() and row["label"] is not None:
-            label = row["label"]
-        nodes.append(
-            {
-                "id": row["id"],
-                "label": label,
-                "type": row.asDict().get("type"),
-            }
-        )
+    for row in vertices_df.toLocalIterator():
+        payload = row.asDict()
+        node_id = payload["id"]
+        label = payload.get("label", node_id) or node_id
+        node_entry = {"id": node_id, "label": label}
+        node_entry.update(payload)
+        nodes.append(node_entry)
 
     links = []
-    for row in edges_df.collect():
+    for row in edges_df.toLocalIterator():
         payload = row.asDict()
-        links.append(
-            {
-                "source": payload["src"],
-                "target": payload["dst"],
-                "score": float(payload.get("score", 0.0)),
-                "title": payload.get("relationship", ""),
-                "data": payload,
-            }
-        )
+        src = payload.get("src")
+        dst = payload.get("dst")
+        edge_id = payload.get("id") or f"{src}__{dst}"
+        link = {
+            "id": edge_id,
+            "source": src,
+            "target": dst,
+            "score": float(payload.get("score", 0.0)),
+            "title": "",
+            "data": payload,
+        }
+        for et in EVENT_TYPE:
+            if et in payload:
+                link[et] = payload[et]
+        links.append(link)
 
     return {"nodes": nodes, "links": links}
 
@@ -333,7 +452,6 @@ def _add_nodes_edges_to_pyvis(net, edges_df: DataFrame, vertices_df: DataFrame, 
     vertex_rows = _collect_vertices(vertices_df)
     edge_rows = _collect_edges(edges_df)
 
-    # Degree from the subgraph for sizing.
     degree = {}
     for e in edge_rows:
         degree[e["src"]] = degree.get(e["src"], 0) + 1
