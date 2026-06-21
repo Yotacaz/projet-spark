@@ -33,19 +33,16 @@ def get_spark_session() -> SparkSession:
         .master("local[4]")  # laisse de la marge au système
         .appName("MarketplaceGraph")
 
-        # Mémoire - augmentée pour éviter les erreurs d'allocation
-        .config("spark.driver.memory", "6g")
+        .config("spark.driver.memory", "4g")
         .config("spark.executor.memory", "2g")
         .config("spark.driver.maxResultSize", "1g")
         .config("spark.memory.fraction", "0.8")
         .config("spark.memory.storageFraction", "0.5")
 
-        # Parallelisme
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.default.parallelism", "4")
 
         # Adaptive Query Execution
-        .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
         .config("spark.sql.adaptive.skewJoin.enabled", "true")
 
@@ -56,6 +53,8 @@ def get_spark_session() -> SparkSession:
         .config("spark.sql.autoBroadcastJoinThreshold", "-1")  # Désactive l'auto-broadcast pour éviter les gros broadcasts
         .config("spark.driver.extraJavaOptions", "-XX:+UseG1GC -XX:MaxGCPauseMillis=200")
         .config("spark.executor.extraJavaOptions", "-XX:+UseG1GC -XX:MaxGCPauseMillis=200")
+
+        .config("spark.sql.streaming.forceDeleteTempCheckpointLocation", "true")
 
         # Delta Lake
         .config("spark.delta.optimizeWrite.enabled", "false")
@@ -111,7 +110,7 @@ TOP_EDGE_PATH = f"{DELTA_PATH}/top_edges"
 EDGES_RAW_PATH = f"{DELTA_PATH}/edges_raw"
 VERTICES_RAW_PATH = f"{DELTA_PATH}/vertices_raw"
 
-SAVE_RAW_DATA: bool = False
+SAVE_RAW_DATA: bool = False 
 
 
 if __name__ == "__main__":

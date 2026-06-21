@@ -19,7 +19,8 @@ def timed(func: Callable[..., T]) -> Callable[..., T]:
         result = func(*args, **kwargs)
         end_time = time.perf_counter()
         elapsed = end_time - start_time
-        print(f"[TIMING] {func.__name__} took {elapsed:.4f} seconds")
+        print_color = "\033[34m"  if elapsed < 1 else "\033[33m" if elapsed < 5 else "\033[31m"
+        print(f"{print_color}[TIMING] {func.__name__} took {elapsed:.4f} seconds\033[0m")
         return result
 
     return wrapper
@@ -39,4 +40,5 @@ class Timer:
     def __exit__(self, *args: Any) -> None:
         if ENABLE_TIMING:
             elapsed = time.perf_counter() - self.start_time
-            print(f"[TIMING] {self.name} took {elapsed:.4f} seconds")
+            print_color = "\033[34m"  if elapsed < 1 else "\033[33m" if elapsed < 5 else "\033[31m"
+            print(f"{print_color}[TIMING] {self.name} took {elapsed:.4f} seconds\033[0m")

@@ -120,49 +120,18 @@ html, body {
   text-align: center;
 }
 
-.btn:hover {
-  background: #333;
-  border-color: #666;
-}
+.btn:hover { background: #333; border-color: #666; }
 
-.btn-primary {
-  background: #2d7d46;
-  border-color: #3a9d56;
-  color: #fff;
-}
+.btn-primary  { background: #2d7d46; border-color: #3a9d56; color: #fff; }
+.btn-primary:hover  { background: #3a9d56; border-color: #4dbd6a; }
 
-.btn-primary:hover {
-  background: #3a9d56;
-  border-color: #4dbd6a;
-}
+.btn-secondary { background: #2a4a7a; border-color: #3560a0; color: #fff; }
+.btn-secondary:hover { background: #3560a0; border-color: #4070b0; }
 
-.btn-secondary {
-  background: #2a4a7a;
-  border-color: #3560a0;
-  color: #fff;
-}
+.btn-danger { background: #6b2a2a; border-color: #8a3535; color: #fff; }
+.btn-danger:hover { background: #8a3535; border-color: #a04040; }
 
-.btn-secondary:hover {
-  background: #3560a0;
-  border-color: #4070b0;
-}
-
-.btn-danger {
-  background: #6b2a2a;
-  border-color: #8a3535;
-  color: #fff;
-}
-
-.btn-danger:hover {
-  background: #8a3535;
-  border-color: #a04040;
-}
-
-.btn-group {
-  display: flex;
-  gap: 8px;
-}
-
+.btn-group { display: flex; gap: 8px; }
 .btn-group .btn { flex: 1; }
 
 /* ── Form elements ──────────────────────────────────────────────────── */
@@ -192,28 +161,15 @@ input, select {
   transition: border-color 0.15s;
 }
 
-input:focus, select:focus {
-  border-color: #4dbd6a;
-}
-
+input:focus, select:focus { border-color: #4dbd6a; }
 input::placeholder { color: #555; }
 
-.form-row {
-  display: flex;
-  gap: 8px;
-}
-
+.form-row { display: flex; gap: 8px; }
 .form-row > * { flex: 1; }
 
 /* ── Search datalist wrapper ────────────────────────────────────────── */
-.search-row {
-  position: relative;
-}
-
-.search-row input {
-  padding-right: 32px;
-}
-
+.search-row { position: relative; }
+.search-row input { padding-right: 32px; }
 .search-row .search-icon {
   position: absolute;
   right: 8px;
@@ -236,32 +192,13 @@ input::placeholder { color: #555; }
   word-break: break-all;
 }
 
-#info-panel .info-empty {
-  color: #555;
-  font-style: italic;
-}
-
-#info-panel .info-title {
-  font-weight: 600;
-  color: #fff;
-  margin-bottom: 4px;
-}
-
-#info-panel .info-key {
-  color: #888;
-}
-
-#info-panel .info-val {
-  color: #4dbd6a;
-}
+#info-panel .info-empty { color: #555; font-style: italic; }
+#info-panel .info-title { font-weight: 600; color: #fff; margin-bottom: 4px; }
+#info-panel .info-key   { color: #888; }
+#info-panel .info-val   { color: #4dbd6a; }
 
 /* ── Legend ──────────────────────────────────────────────────────────── */
-.legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
+.legend { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
 .legend-item {
   display: flex;
@@ -278,11 +215,7 @@ input::placeholder { color: #555; }
   border: 1px solid rgba(255,255,255,0.2);
 }
 
-.legend-line {
-  width: 20px;
-  height: 3px;
-  border-radius: 2px;
-}
+.legend-line { width: 20px; height: 3px; border-radius: 2px; }
 
 /* ── Graph container ────────────────────────────────────────────────── */
 #graph-container {
@@ -309,12 +242,9 @@ input::placeholder { color: #555; }
   pointer-events: none;
 }
 
-#network {
-  width: 100%;
-  height: 100%;
-}
+#network { width: 100%; height: 100%; }
 
-/* ── Active filters badge ───────────────────────────────────────────── */
+/* ── Filter badge ───────────────────────────────────────────────────── */
 .filter-badge {
   display: inline-flex;
   align-items: center;
@@ -327,13 +257,7 @@ input::placeholder { color: #555; }
   color: #8ab4f8;
 }
 
-.filter-badge .remove {
-  cursor: pointer;
-  color: #666;
-  font-size: 14px;
-  line-height: 1;
-}
-
+.filter-badge .remove { cursor: pointer; color: #666; font-size: 14px; line-height: 1; }
 .filter-badge .remove:hover { color: #f88; }
 
 /* ── Responsive ─────────────────────────────────────────────────────── */
@@ -391,16 +315,18 @@ input::placeholder { color: #555; }
     <!-- Actions -->
     <div class="sidebar-section">
       <h2>Actions</h2>
-      <button class="btn btn-primary" onclick="loadBestEdges(true)">🏆 Best Edges</button>
+      <button class="btn btn-primary" onclick="loadBestEdges()">🏆 Best Edges</button>
       <div class="form-row" style="margin-top:8px;align-items:end;">
         <div style="flex:1;">
           <div style="display:flex;align-items:center;gap:6px;">
             <label for="auto-refresh-toggle" style="margin:0;cursor:pointer;">Auto-refresh</label>
-            <input id="auto-refresh-toggle" type="checkbox" onchange="onAutoRefreshToggle()" style="width:16px;height:16px;accent-color:#4dbd6a;">
+            <input id="auto-refresh-toggle" type="checkbox" onchange="onAutoRefreshToggle()"
+                   style="width:16px;height:16px;accent-color:#4dbd6a;">
           </div>
         </div>
         <div style="flex:0 0 80px;">
-          <select id="auto-refresh-interval" onchange="onAutoRefreshIntervalChange()" style="font-size:11px;padding:6px;">
+          <select id="auto-refresh-interval" onchange="onAutoRefreshIntervalChange()"
+                  style="font-size:11px;padding:6px;">
             <option value="10000" selected>10s</option>
             <option value="15000">15s</option>
             <option value="30000">30s</option>
@@ -422,7 +348,7 @@ input::placeholder { color: #555; }
           list="node-suggestions"
           autocomplete="off"
           oninput="onNodeSearchInput(this.value)"
-          onkeydown="if(event.key==='Enter')onNodeSearch()"
+          onkeydown="if(event.key==='Enter') onNodeSearch()"
         >
         <datalist id="node-suggestions"></datalist>
         <span class="search-icon">🔍</span>
@@ -478,7 +404,7 @@ input::placeholder { color: #555; }
       <button class="btn btn-secondary" style="margin-top:8px;" onclick="onEdgeSearch()">Load Edge</button>
     </div>
 
-    <!-- Active filters / info -->
+    <!-- Selection info -->
     <div class="sidebar-section">
       <h2>Selection</h2>
       <div id="info-panel">
@@ -500,7 +426,7 @@ input::placeholder { color: #555; }
     </div>
   </div>
 
-  <!-- ─── Graph ────────────────────────────────────────────────────── -->
+  <!-- ─── Graph canvas ──────────────────────────────────────────────── -->
   <div id="graph-container">
     <div class="loading-overlay" id="loading-overlay">⏳ Loading graph data…</div>
     <div id="network"></div>
@@ -509,7 +435,7 @@ input::placeholder { color: #555; }
 </div>
 
 <script>
-// ─── Configuration ──────────────────────────────────────────────────────
+// ─── 1. Configuration ────────────────────────────────────────────────────
 const COLORS = {
   USER: { background: '#4fc3f7', border: '#4fc3f7' },
   PROD: { background: '#ffb74d', border: '#ffb74d' },
@@ -522,22 +448,20 @@ const EDGE_COLORS = {
   ACHAT: '#f44336',
 };
 
-const DEFAULT_EDGE_COLOR = '#666';
+const DEFAULT_EDGE_COLOR  = '#666';
+const STATS_INTERVAL_MS   = 20_000;
 
-// ─── State ──────────────────────────────────────────────────────────────
-let network = null;
-let nodesDataSet = new vis.DataSet([]);
-let edgesDataSet = new vis.DataSet([]);
+// ─── 2. State ────────────────────────────────────────────────────────────
+let network          = null;
+let nodesDataSet     = new vis.DataSet([]);
+let edgesDataSet     = new vis.DataSet([]);
 let currentGraphData = null;
-let searchTimeout = null;
+let currentView      = null;  // { mode: 'best-edges'|'node'|'edge', params: {...} }
+let searchTimeout    = null;
 let autoRefreshTimer = null;
-let currentView = null;
-let statsTimer = null;
+let statsTimer       = null;
 
-let timeBetweenStatFetch = 20000; //20 seconds
-
-
-// ─── Helpers ─────────────────────────────────────────────────────────────
+// ─── 3. Utilities ────────────────────────────────────────────────────────
 function _baseNodeColor(node) {
   return COLORS[node._type] || { background: '#888', border: '#888' };
 }
@@ -547,73 +471,349 @@ function _baseEdgeColor(edge) {
   return EDGE_COLORS[rel] || DEFAULT_EDGE_COLOR;
 }
 
-function _syncDataSet(dataset, items) {
-  const existingIds = new Set(dataset.getIds());
-  const nextIds = new Set(items.map(item => item.id));
-
-  const removals = [];
-  existingIds.forEach(id => {
-    if (!nextIds.has(id)) removals.push(id);
-  });
-  if (removals.length) dataset.remove(removals);
-
-  if (items.length) dataset.update(items);
-}
-
 function _edgeId(edge, index) {
   return edge.id || `e-${edge.source}--${edge.target}--${index}`;
 }
 
-// ─── Initialize vis-network ──────────────────────────────────────────────
+function _syncDataSet(dataset, items) {
+  const existingIds = new Set(dataset.getIds());
+  const nextIds     = new Set(items.map(item => item.id));
+
+  const removals = [];
+  existingIds.forEach(id => { if (!nextIds.has(id)) removals.push(id); });
+  if (removals.length) dataset.remove(removals);
+  if (items.length)    dataset.update(items);
+}
+
+// ─── 4. Loading overlay ──────────────────────────────────────────────────
+function showLoading(msg) {
+  const overlay = document.getElementById('loading-overlay');
+  overlay.textContent = msg || '⏳ Loading graph data…';
+  overlay.classList.remove('hidden');
+}
+
+function hideLoading() {
+  document.getElementById('loading-overlay').classList.add('hidden');
+}
+
+// ─── 5. Info panel ───────────────────────────────────────────────────────
+function showNodeInfo(nodeId) {
+  const data = currentGraphData;
+  if (!data) return;
+
+  const node = data.nodes.find(n => n.id === nodeId);
+  if (!node) {
+    document.getElementById('info-panel').innerHTML =
+      `<span class="info-title">Node: ${nodeId}</span> (no data)`;
+    return;
+  }
+
+  const degree     = data.links.filter(e => e.source === nodeId || e.target === nodeId).length;
+  const relCounts  = {};
+  const actionTotals = { AIME: 0, VOUT: 0, ACHAT: 0 };
+
+  for (const e of data.links) {
+    if (e.source !== nodeId && e.target !== nodeId) continue;
+    const rel = (e.data && e.data.relationship) || 'unknown';
+    relCounts[rel] = (relCounts[rel] || 0) + 1;
+    const raw = e.data || e;
+    for (const action of ['AIME', 'VOUT', 'ACHAT']) {
+      if (raw[action] != null) actionTotals[action] += Number(raw[action]) || 0;
+    }
+  }
+
+  let html = `<div class="info-title">📌 Node: ${node.id}</div>`;
+  html += `<span class="info-key">type:</span> <span class="info-val">${node.type || 'unknown'}</span><br>`;
+  html += `<span class="info-key">degree:</span> <span class="info-val">${degree}</span>`;
+  if (node.label && node.label !== node.id) {
+    html += `<br><span class="info-key">label:</span> <span class="info-val">${node.label}</span>`;
+  }
+
+  if (Object.keys(relCounts).length > 0) {
+    html += '<br><br><span class="info-key">edge breakdown:</span><br>';
+    for (const [rel, count] of Object.entries(relCounts)) {
+      const color = EDGE_COLORS[rel] || '#888';
+      html += `<span style="color:${color};font-weight:600;">▸</span> ${rel}: ${count}<br>`;
+    }
+  }
+
+  const totalActions = Object.values(actionTotals).reduce((a, b) => a + b, 0);
+  if (totalActions > 0) {
+    html += '<br><span class="info-key">total actions:</span><br>';
+    for (const [action, count] of Object.entries(actionTotals)) {
+      if (count > 0) {
+        const color = EDGE_COLORS[action] || '#888';
+        html += `<span style="color:${color};font-weight:600;">▸</span> ${action}: ${count}<br>`;
+      }
+    }
+  }
+
+  document.getElementById('info-panel').innerHTML = html;
+}
+
+function showEdgeInfo(src, dst) {
+  const data = currentGraphData;
+  if (!data) return;
+
+  const link = data.links.find(e => e.source === src && e.target === dst);
+  if (!link) {
+    document.getElementById('info-panel').innerHTML =
+      `<span class="info-title">Edge: ${src} → ${dst}</span> (no data)`;
+    return;
+  }
+
+  const raw          = link.data || link;
+  const relationship = raw.relationship || 'unknown';
+  const relColor     = EDGE_COLORS[relationship] || '#888';
+
+  let html = `<div class="info-title">📎 Edge: ${src} → ${dst}</div>`;
+  html += `<span class="info-key">relationship:</span> `;
+  html += `<span class="info-val" style="color:${relColor};font-weight:600;">${relationship}</span><br>`;
+
+  if (raw.score != null) {
+    html += `<span class="info-key">score:</span> <span class="info-val">${Number(raw.score).toFixed(2)}</span><br>`;
+  }
+
+  for (const action of ['AIME', 'VOUT', 'ACHAT']) {
+    if (raw[action] != null && Number(raw[action]) > 0) {
+      const actionColor = EDGE_COLORS[action] || '#888';
+      html += `<span class="info-key">${action}:</span> `;
+      html += `<span class="info-val" style="color:${actionColor};font-weight:600;">${Number(raw[action])}</span><br>`;
+    }
+  }
+
+  for (const f of ['price', 'last_interaction']) {
+    if (raw[f] != null) {
+      html += `<span class="info-key">${f}:</span> <span class="info-val">${raw[f]}</span><br>`;
+    }
+  }
+
+  const srcNode = data.nodes.find(n => n.id === src);
+  const dstNode = data.nodes.find(n => n.id === dst);
+  if (srcNode || dstNode) {
+    html += '<br>';
+    if (srcNode) html += `<span class="info-key">source type:</span> <span class="info-val">${srcNode.type || '?'}</span><br>`;
+    if (dstNode) html += `<span class="info-key">target type:</span> <span class="info-val">${dstNode.type || '?'}</span>`;
+  }
+
+  document.getElementById('info-panel').innerHTML = html;
+}
+
+function showDefaultInfo() {
+  const data = currentGraphData;
+  if (data) {
+    document.getElementById('info-panel').innerHTML = `
+      <div class="info-title">Graph loaded</div>
+      <span class="info-key">nodes:</span> <span class="info-val">${data.nodes.length}</span><br>
+      <span class="info-key">edges:</span> <span class="info-val">${data.links.length}</span><br>
+      <span style="color:#555;font-style:italic;">Click a node or edge for details.</span>
+    `;
+  } else {
+    document.getElementById('info-panel').innerHTML =
+      '<span class="info-empty">Click a node or edge on the graph, or use the search above.</span>';
+  }
+}
+
+function showInfo(msg) {
+  document.getElementById('info-panel').innerHTML = `<span class="info-title">ℹ️</span> ${msg}`;
+}
+
+function showError(msg) {
+  hideLoading();
+  document.getElementById('info-panel').innerHTML =
+    `<span class="info-title" style="color:#f44;">⚠️ Error</span> ${msg}`;
+}
+
+// ─── 6. Highlight ────────────────────────────────────────────────────────
+function clearHighlight() {
+  if (!network) return;
+
+  const nodeUpdates = nodesDataSet.get().map(n => ({
+    id:    n.id,
+    color: { ..._baseNodeColor(n), opacity: 1.0 },
+    font:  { color: '#ccc' },
+  }));
+  const edgeUpdates = edgesDataSet.get().map(e => {
+    const col = _baseEdgeColor(e);
+    return { id: e.id, color: { color: col, highlight: '#fff', hover: '#fff', opacity: 0.85 } };
+  });
+
+  if (nodeUpdates.length) nodesDataSet.update(nodeUpdates);
+  if (edgeUpdates.length) edgesDataSet.update(edgeUpdates);
+}
+
+function highlightNodeNeighborhood(nodeId) {
+  if (!network) return;
+  const connectedEdges = new Set(network.getConnectedEdges(nodeId));
+  const connectedNodes = new Set(network.getConnectedNodes(nodeId));
+  connectedNodes.add(nodeId);
+
+  const nodeUpdates = nodesDataSet.get().map(n => {
+    const active = connectedNodes.has(n.id);
+    return {
+      id:    n.id,
+      color: { ..._baseNodeColor(n), opacity: active ? 1.0 : 0.15 },
+      font:  { color: active ? '#ccc' : '#444' },
+    };
+  });
+  const edgeUpdates = edgesDataSet.get().map(e => {
+    const active = connectedEdges.has(e.id);
+    const col    = _baseEdgeColor(e);
+    return { id: e.id, color: { color: col, highlight: '#fff', hover: '#fff', opacity: active ? 0.85 : 0.08 } };
+  });
+
+  nodesDataSet.update(nodeUpdates);
+  edgesDataSet.update(edgeUpdates);
+}
+
+function highlightEdge(edgeId) {
+  if (!network) return;
+
+  const edgeUpdates = edgesDataSet.get().map(e => {
+    const col = _baseEdgeColor(e);
+    return { id: e.id, color: { color: col, highlight: '#fff', hover: '#fff', opacity: e.id === edgeId ? 0.95 : 0.08 } };
+  });
+  const nodeUpdates = nodesDataSet.get().map(n => ({
+    id:    n.id,
+    color: { ..._baseNodeColor(n), opacity: 0.15 },
+    font:  { color: '#444' },
+  }));
+
+  edgesDataSet.update(edgeUpdates);
+  nodesDataSet.update(nodeUpdates);
+}
+
+// ─── 7. Graph data building ──────────────────────────────────────────────
+function _buildGraphItems(data) {
+  const degree = {};
+  for (const link of data.links) {
+    degree[link.source] = (degree[link.source] || 0) + 1;
+    degree[link.target] = (degree[link.target] || 0) + 1;
+  }
+
+  const scores     = data.links.map(l => Number(l.score)).filter(s => Number.isFinite(s));
+  const minScore   = scores.length > 0 ? Math.min(...scores) : 0;
+  const maxScore   = scores.length > 0 ? Math.max(...scores) : 1;
+  const scoreRange = maxScore - minScore || 1;
+
+  const nodes = data.nodes.map(n => ({
+    id:      n.id,
+    label:   n.label || n.id,
+    title:   `id: ${n.id}<br>type: ${n.type || 'unknown'}<br>degree: ${degree[n.id] || 0}`,
+    color:   _baseNodeColor({ _type: n.type }),
+    value:   Math.max(5, Math.min(40, (degree[n.id] || 0) * 3)),
+    shape:   n.type === 'USER' ? 'dot' : n.type === 'PROD' ? 'square' : 'diamond',
+    _type:   n.type || 'unknown',
+    _degree: degree[n.id] || 0,
+  }));
+
+  const edges = data.links.map((e, i) => {
+    const raw          = e.data || e;
+    const relationship = raw.relationship || '';
+    const score        = Number(e.score ?? raw.score ?? 0);
+    const widthVal     = 0.5 + 3.5 * ((score - minScore) / scoreRange);
+
+    let tooltip = `score: ${score.toFixed(2)}<br>type: ${relationship || 'unknown'}`;
+    for (const action of ['AIME', 'VOUT', 'ACHAT']) {
+      if (raw[action] != null && Number(raw[action]) > 0) tooltip += `<br>${action}: ${raw[action]}`;
+    }
+    if (raw.price            != null) tooltip += `<br>price: ${raw.price}`;
+    if (raw.last_interaction != null) tooltip += `<br>last: ${raw.last_interaction}`;
+
+    return {
+      id:    _edgeId(e, i),
+      from:  e.source,
+      to:    e.target,
+      label: Number.isFinite(score) ? score.toFixed(1) : '',
+      value: score,
+      width: widthVal,
+      color: {
+        color:     EDGE_COLORS[relationship] || DEFAULT_EDGE_COLOR,
+        highlight: '#fff',
+        hover:     '#fff',
+        opacity:   0.85,
+      },
+      title: tooltip,
+      font:  { size: Math.min(12, 8 + widthVal * 2) },
+      _data: raw,
+    };
+  });
+
+  return { nodes, edges };
+}
+
+// ─── 8. Graph drawing ────────────────────────────────────────────────────
+function drawGraph(data) {
+  hideLoading();
+  currentGraphData = data;
+
+  const items = _buildGraphItems(data);
+  nodesDataSet.clear();
+  edgesDataSet.clear();
+  nodesDataSet.add(items.nodes);
+  edgesDataSet.add(items.edges);
+
+  showDefaultInfo();
+  network.setOptions({ physics: { enabled: true, stabilization: { iterations: 300 } } });
+  network.stabilize(150);
+  setTimeout(() => { if (network) network.setOptions({ physics: { enabled: false } }); }, 1500);
+}
+
+function drawGraphSilent(data) {
+  const viewPos = network.getViewPosition();
+  const scale   = network.getScale();
+
+  currentGraphData = data;
+
+  const items = _buildGraphItems(data);
+  _syncDataSet(nodesDataSet, items.nodes);
+  _syncDataSet(edgesDataSet, items.edges);
+
+  network.setOptions({ physics: { enabled: true, stabilization: { iterations: 200 } } });
+  network.stabilize(100);
+  setTimeout(() => {
+    if (network) {
+      network.setOptions({ physics: { enabled: false } });
+      network.moveTo({ position: viewPos, scale });
+    }
+  }, 500);
+}
+
+// ─── 9. Network initialization ───────────────────────────────────────────
 function initNetwork() {
   const container = document.getElementById('network');
-  const options = {
+
+  network = new vis.Network(container, { nodes: nodesDataSet, edges: edgesDataSet }, {
     nodes: {
       shape: 'dot',
-      size: 12,
-      font: {
-        color: '#ccc',
-        size: 11,
-        face: 'Segoe UI, system-ui, sans-serif',
-        strokeWidth: 0,
-      },
+      size:  12,
+      font: { color: '#ccc', size: 11, face: 'Segoe UI, system-ui, sans-serif', strokeWidth: 0 },
       borderWidth: 2,
       shadow: { enabled: true, size: 4, x: 0, y: 2 },
     },
     edges: {
       arrows: { to: { enabled: true, scaleFactor: 0.6 } },
       smooth: { type: 'curvedCW', roundness: 0.15 },
-      font: {
-        color: '#888',
-        size: 10,
-        strokeWidth: 0,
-        align: 'middle',
-      },
-      width: 1,
-      hoverWidth: 2,
-      selectionWidth: 2,
+      font:   { color: '#888', size: 10, strokeWidth: 0, align: 'middle' },
+      width: 1, hoverWidth: 2, selectionWidth: 2,
     },
     physics: {
       solver: 'barnesHut',
       barnesHut: {
         gravitationalConstant: -4000,
-        centralGravity: 0.3,
-        springLength: 120,
-        springConstant: 0.04,
-        damping: 0.09,
+        centralGravity:  0.3,
+        springLength:    120,
+        springConstant:  0.04,
+        damping:         0.09,
       },
       stabilization: { iterations: 250 },
     },
     interaction: {
-      hover: true,
-      tooltipDelay: 200,
-      navigationButtons: false,
+      hover: true, tooltipDelay: 200, navigationButtons: false,
       keyboard: { enabled: true },
     },
     manipulation: { enabled: false },
-  };
-
-  network = new vis.Network(container, { nodes: nodesDataSet, edges: edgesDataSet }, options);
+  });
 
   network.on('click', function (params) {
     if (params.nodes.length > 0) {
@@ -621,19 +821,17 @@ function initNetwork() {
       clearHighlight();
       highlightNodeNeighborhood(nodeId);
       showNodeInfo(nodeId);
-      // Auto-fill node search form
       document.getElementById('node-search').value = nodeId;
       return;
     }
 
     if (params.edges.length > 0) {
       const edgeId = params.edges[0];
-      const edge = edgesDataSet.get(edgeId);
+      const edge   = edgesDataSet.get(edgeId);
       if (edge) {
         clearHighlight();
         highlightEdge(edgeId);
         showEdgeInfo(edge.from, edge.to);
-        // Auto-fill edge search form
         document.getElementById('edge-src').value = edge.from;
         document.getElementById('edge-dst').value = edge.to;
       }
@@ -645,129 +843,21 @@ function initNetwork() {
   });
 }
 
-// ─── Build vis items from API data ───────────────────────────────────────
-function _buildGraphItems(data) {
-  const degree = {};
-  for (const link of data.links) {
-    degree[link.source] = (degree[link.source] || 0) + 1;
-    degree[link.target] = (degree[link.target] || 0) + 1;
+// ─── 10. View state & auto-refresh ───────────────────────────────────────
+function _setCurrentView(mode, params) {
+  currentView = { mode, params };
+  if (document.getElementById('auto-refresh-toggle').checked) {
+    _scheduleAutoRefresh();
   }
-
-  const scores = data.links
-    .map(l => Number(l.score))
-    .filter(s => Number.isFinite(s));
-  const minScore = scores.length > 0 ? Math.min(...scores) : 0;
-  const maxScore = scores.length > 0 ? Math.max(...scores) : 1;
-  const scoreRange = maxScore - minScore || 1;
-
-  const nodes = data.nodes.map(n => ({
-    id: n.id,
-    label: n.label || n.id,
-    title: `id: ${n.id}<br>type: ${n.type || 'unknown'}<br>degree: ${degree[n.id] || 0}`,
-    color: _baseNodeColor({ _type: n.type }),
-    value: Math.max(5, Math.min(40, (degree[n.id] || 0) * 3)),
-    shape: n.type === 'USER' ? 'dot' : n.type === 'PROD' ? 'square' : 'diamond',
-    _type: n.type || 'unknown',
-    _degree: degree[n.id] || 0,
-  }));
-
-  const edges = data.links.map((e, i) => {
-    const raw = e.data || e;
-    const relationship = raw.relationship || '';
-    const score = Number(e.score ?? raw.score ?? 0);
-    const widthVal = 0.5 + 3.5 * ((score - minScore) / scoreRange);
-
-    // Build tooltip with all relevant info
-    let tooltip = `score: ${score.toFixed(2)}<br>type: ${relationship || 'unknown'}`;
-    for (const action of ['AIME', 'VOUT', 'ACHAT']) {
-      if (raw[action] !== undefined && raw[action] !== null && Number(raw[action]) > 0) {
-        tooltip += `<br>${action}: ${raw[action]}`;
-      }
-    }
-    if (raw.price !== undefined && raw.price !== null) {
-      tooltip += `<br>price: ${raw.price}`;
-    }
-    if (raw.last_interaction !== undefined && raw.last_interaction !== null) {
-      tooltip += `<br>last: ${raw.last_interaction}`;
-    }
-
-    return {
-      id: _edgeId(e, i),
-      from: e.source,
-      to: e.target,
-      label: Number.isFinite(score) ? score.toFixed(1) : '',
-      value: score,
-      width: widthVal,
-      color: {
-        color: EDGE_COLORS[relationship] || DEFAULT_EDGE_COLOR,
-        highlight: '#fff',
-        hover: '#fff',
-        opacity: 0.85,
-      },
-      title: tooltip,
-      font: { size: Math.min(12, 8 + widthVal * 2) },
-      _data: raw,
-    };
-  });
-
-  return { nodes, edges };
 }
 
-// ─── Draw / refresh graph ────────────────────────────────────────────────
-function drawGraph(data) {
-  hideLoading();
-  const items = _buildGraphItems(data);
-
-  nodesDataSet.clear();
-  edgesDataSet.clear();
-  nodesDataSet.add(items.nodes);
-  edgesDataSet.add(items.edges);
-
-  currentGraphData = data;
-  showDefaultInfo();
-
-  network.setOptions({ physics: { enabled: true, stabilization: { iterations: 300 } } });
-  network.stabilize(150);
-
-  setTimeout(() => {
-    if (network) {
-      network.setOptions({ physics: { enabled: false } });
-    }
-  }, 1500);
-}
-
-function drawGraphSilent(data) {
-  const viewPos = network.getViewPosition();
-  const scale = network.getScale();
-
-  const items = _buildGraphItems(data);
-  _syncDataSet(nodesDataSet, items.nodes);
-  _syncDataSet(edgesDataSet, items.edges);
-
-  currentGraphData = data;
-
-  // Enable physics briefly to position new nodes, then restore view
-  network.setOptions({ physics: { enabled: true, stabilization: { iterations: 200 } } });
-  network.stabilize(100);
-
-  setTimeout(() => {
-    if (network) {
-      network.setOptions({ physics: { enabled: false } });
-      network.moveTo({ position: viewPos, scale: scale });
-    }
-  }, 500);
-}
-
-// ─── Auto-refresh state machine ──────────────────────────────────────────
 function _getAutoRefreshInterval() {
-  return parseInt(document.getElementById('auto-refresh-interval').value, 15);
+  // FIX: was parseInt(..., 15) — base 15 inflated every interval by 5–15x
+  return parseInt(document.getElementById('auto-refresh-interval').value, 10);
 }
 
 function _clearAutoRefresh() {
-  if (autoRefreshTimer) {
-    clearTimeout(autoRefreshTimer);
-    autoRefreshTimer = null;
-  }
+  if (autoRefreshTimer) { clearTimeout(autoRefreshTimer); autoRefreshTimer = null; }
 }
 
 function _scheduleAutoRefresh() {
@@ -775,10 +865,12 @@ function _scheduleAutoRefresh() {
   if (!document.getElementById('auto-refresh-toggle').checked) return;
   if (!currentView) return;
 
-  const interval = _getAutoRefreshInterval();
+  const interval  = _getAutoRefreshInterval();
+  const modeLabel = { 'best-edges': 'Best Edges', node: 'Node', edge: 'Edge' }[currentView.mode]
+                    || currentView.mode;
+  document.getElementById('auto-refresh-status').textContent =
+    `⏳ Refreshing ${modeLabel} every ${interval / 1000}s…`;
   autoRefreshTimer = setTimeout(_doAutoRefresh, interval);
-  const modeLabel = { 'best-edges': 'Best Edges', 'node': 'Node', 'edge': 'Edge' }[currentView.mode] || currentView.mode;
-  document.getElementById('auto-refresh-status').textContent = `⏳ Refreshing ${modeLabel} every ${interval / 1000}s…`;
 }
 
 async function _doAutoRefresh() {
@@ -788,36 +880,32 @@ async function _doAutoRefresh() {
     return;
   }
 
+  const { mode, params } = currentView;
+  let url = '';
+
+  if (mode === 'best-edges') {
+    url = '/api/best-edges?limit=100';
+  } else if (mode === 'node') {
+    url = `/api/node/${encodeURIComponent(params.id)}?hops=${params.hops}`;
+    if (params.maxEdges) url += `&max_edges=${params.maxEdges}`;
+    if (params.minScore) url += `&min_score=${params.minScore}`;
+  } else if (mode === 'edge') {
+    url = `/api/edge?src=${encodeURIComponent(params.src)}&dst=${encodeURIComponent(params.dst)}&hops=${params.hops}`;
+    if (params.maxEdges) url += `&max_edges=${params.maxEdges}`;
+  }
+
+  url += (url.includes('?') ? '&' : '?') + 'force_reload=1';
+
   try {
-    const { mode, params } = currentView;
-    let url = '';
-
-    if (mode === 'best-edges') {
-      url = '/api/best-edges?limit=100';
-    } else if (mode === 'node') {
-      url = `/api/node/${encodeURIComponent(params.id)}?hops=${params.hops}`;
-      if (params.maxEdges) url += `&max_edges=${params.maxEdges}`;
-      if (params.minScore) url += `&min_score=${params.minScore}`;
-    } else if (mode === 'edge') {
-      url = `/api/edge?src=${encodeURIComponent(params.src)}&dst=${encodeURIComponent(params.dst)}&hops=${params.hops}`;
-      if (params.maxEdges) url += `&max_edges=${params.maxEdges}`;
-    }
-
-    url += (url.includes('?') ? '&' : '?') + 'force_reload=1';
-
     const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
     drawGraphSilent(data);
 
-    if (mode === 'best-edges') {
-      showDefaultInfo();
-    } else if (mode === 'node') {
-      showNodeInfo(params.id);
-    } else if (mode === 'edge') {
-      showEdgeInfo(params.src, params.dst);
-    }
+    if      (mode === 'best-edges') showDefaultInfo();
+    else if (mode === 'node')       showNodeInfo(params.id);
+    else if (mode === 'edge')       showEdgeInfo(params.src, params.dst);
   } catch (err) {
     console.warn('Auto-refresh failed:', err.message);
   }
@@ -836,42 +924,45 @@ function onAutoRefreshToggle() {
 }
 
 function onAutoRefreshIntervalChange() {
-  if (document.getElementById('auto-refresh-toggle').checked) {
-    _scheduleAutoRefresh();
-  }
+  if (document.getElementById('auto-refresh-toggle').checked) _scheduleAutoRefresh();
 }
 
-function _setCurrentView(mode, params) {
-  currentView = { mode, params };
-  if (document.getElementById('auto-refresh-toggle').checked) {
-    _scheduleAutoRefresh();
-  }
+// ─── 11. Stats ───────────────────────────────────────────────────────────
+async function fetchStats() {
+  try {
+    const res = await fetch('/api/stats', { cache: 'no-store' });
+    if (!res.ok) return;
+    const stats = await res.json();
+    document.getElementById('stat-vertices').textContent = stats.vertices.toLocaleString();
+    document.getElementById('stat-edges').textContent    = stats.edges.toLocaleString();
+  } catch (_) {}
 }
 
-// ─── Stats Timer ─────────────────────────────────────────────────────────
-// Note: startStatsTimer() is called in init to fetch stats immediately and periodically
+function startStatsTimer() {
+  if (statsTimer) { clearInterval(statsTimer); statsTimer = null; }
+  fetchStats();
+  statsTimer = setInterval(fetchStats, STATS_INTERVAL_MS);
+}
 
-// ─── API calls ───────────────────────────────────────────────────────────
-async function loadBestEdges(shouldFetchStats = false) {
-  showLoading('🏆 Loading best edges…');
+// ─── 12. API calls ───────────────────────────────────────────────────────
+async function loadBestEdges() {
+  showLoading('🏆 Loading "best" edges…');
   try {
     const res = await fetch('/api/best-edges?limit=100');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     drawGraph(data);
-    if (shouldFetchStats) {
-      fetchStats();
-    }
     _setCurrentView('best-edges', {});
   } catch (err) {
-    showError(`Failed to load best edges: ${err.message}`);
+    showError(`Failed to load "best" edges: ${err.message}`);
   }
 }
 
-async function onNodeSearch(nodeId) {
-  const id = nodeId || document.getElementById('node-search').value.trim();
+async function onNodeSearch() {
+  const id = document.getElementById('node-search').value.trim();
   if (!id) return;
-  const hops = document.getElementById('node-hops').value;
+
+  const hops     = document.getElementById('node-hops').value;
   const maxEdges = document.getElementById('node-max-edges').value || '';
   const minScore = document.getElementById('node-min-score').value || '';
 
@@ -880,12 +971,13 @@ async function onNodeSearch(nodeId) {
     let url = `/api/node/${encodeURIComponent(id)}?hops=${hops}`;
     if (maxEdges) url += `&max_edges=${maxEdges}`;
     if (minScore) url += `&min_score=${minScore}`;
+
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+
     drawGraph(data);
     showNodeInfo(id);
-    fetchStats();
     _setCurrentView('node', { id, hops, maxEdges, minScore });
   } catch (err) {
     showError(`Failed to load node: ${err.message}`);
@@ -899,22 +991,24 @@ async function onEdgeSearch() {
     showInfo('Please enter both source and target node IDs.');
     return;
   }
-  const hops = document.getElementById('edge-hops').value;
+
+  const hops     = document.getElementById('edge-hops').value;
   const maxEdges = document.getElementById('edge-max-edges').value || '';
 
   showLoading(`🔍 Loading edge ${src} → ${dst}…`);
   try {
     let url = `/api/edge?src=${encodeURIComponent(src)}&dst=${encodeURIComponent(dst)}&hops=${hops}`;
     if (maxEdges) url += `&max_edges=${maxEdges}`;
+
     const res = await fetch(url);
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `HTTP ${res.status}`);
     }
     const data = await res.json();
+
     drawGraph(data);
     showEdgeInfo(src, dst);
-    fetchStats();
     _setCurrentView('edge', { src, dst, hops, maxEdges });
   } catch (err) {
     showError(`Failed to load edge: ${err.message}`);
@@ -932,277 +1026,16 @@ async function onNodeSearchInput(val) {
       const res = await fetch(`/api/search?q=${encodeURIComponent(val)}`);
       if (!res.ok) return;
       const results = await res.json();
-      const datalist = document.getElementById('node-suggestions');
-      datalist.innerHTML = results
-        .map(r => `<option value="${r.id}">[${r.type}] ${r.id}</option>`)
-        .join('');
+      document.getElementById('node-suggestions').innerHTML =
+        results.map(r => `<option value="${r.id}">[${r.type}] ${r.id}</option>`).join('');
     } catch (_) {}
   }, 200);
 }
 
-async function fetchStats() {
-  try {
-    const res = await fetch('/api/stats');
-    if (!res.ok) return;
-    const stats = await res.json();
-    document.getElementById('stat-vertices').textContent = stats.vertices.toLocaleString();
-    document.getElementById('stat-edges').textContent = stats.edges.toLocaleString();
-  } catch (_) {}
-}
-
-function startStatsTimer() {
-  _clearStatsTimer();
-  fetchStats(); // Fetch immediately
-  statsTimer = setInterval(fetchStats, timeBetweenStatFetch);
-}
-
-function _clearStatsTimer() {
-  if (statsTimer) {
-    clearInterval(statsTimer);
-    statsTimer = null;
-  }
-}
-
-// ─── Info panel ──────────────────────────────────────────────────────────
-function showNodeInfo(nodeId) {
-  const data = currentGraphData;
-  if (!data) return;
-  const node = data.nodes.find(n => n.id === nodeId);
-  if (!node) {
-    document.getElementById('info-panel').innerHTML = `<span class="info-title">Node: ${nodeId}</span> (no data)`;
-    return;
-  }
-
-  const degree = data.links.filter(e => e.source === nodeId || e.target === nodeId).length;
-
-  let html = `<div class="info-title">📌 Node: ${node.id}</div>`;
-  html += `<span class="info-key">type:</span> <span class="info-val">${node.type || 'unknown'}</span><br>`;
-  html += `<span class="info-key">degree:</span> <span class="info-val">${degree}</span>`;
-  
-  // Display label if different from id
-  if (node.label && node.label !== node.id) {
-    html += `<br><span class="info-key">label:</span> <span class="info-val">${node.label}</span><br>`;
-  }
-
-  const relCounts = {};
-  const actionTotals = { AIME: 0, VOUT: 0, ACHAT: 0 };
-  
-  for (const e of data.links) {
-    if (e.source === nodeId || e.target === nodeId) {
-      const rel = (e.data && e.data.relationship) || 'unknown';
-      relCounts[rel] = (relCounts[rel] || 0) + 1;
-      
-      // Sum action counts from connected edges
-      const raw = e.data || e;
-      for (const action of ['AIME', 'VOUT', 'ACHAT']) {
-        if (raw[action] !== undefined && raw[action] !== null) {
-          actionTotals[action] += Number(raw[action]) || 0;
-        }
-      }
-    }
-  }
-
-  if (Object.keys(relCounts).length > 0) {
-    html += '<br><br><span class="info-key">edge breakdown:</span><br>';
-    for (const [rel, count] of Object.entries(relCounts)) {
-      const color = EDGE_COLORS[rel] || '#888';
-      html += `<span style="color:${color};font-weight:600;">▸</span> ${rel}: ${count}<br>`;
-    }
-  }
-  
-  // Display total action counts
-  const totalActions = Object.values(actionTotals).reduce((a, b) => a + b, 0);
-  if (totalActions > 0) {
-    html += '<br><span class="info-key">total actions:</span><br>';
-    for (const [action, count] of Object.entries(actionTotals)) {
-      if (count > 0) {
-        const color = EDGE_COLORS[action] || '#888';
-        html += `<span style="color:${color};font-weight:600;">▸</span> ${action}: ${count}<br>`;
-      }
-    }
-  }
-
-  document.getElementById('info-panel').innerHTML = html;
-}
-
-function showEdgeInfo(src, dst) {
-  const data = currentGraphData;
-  if (!data) return;
-  const link = data.links.find(e => e.source === src && e.target === dst);
-  if (!link) {
-    document.getElementById('info-panel').innerHTML = `<span class="info-title">Edge: ${src} → ${dst}</span> (no data)`;
-    return;
-  }
-  const raw = link.data || link;
-
-  let html = `<div class="info-title">📎 Edge: ${src} → ${dst}</div>`;
-  
-  // Display relationship type with color
-  const relationship = raw.relationship || 'unknown';
-  const relColor = EDGE_COLORS[relationship] || '#888';
-  html += `<span class="info-key">relationship:</span> <span class="info-val" style="color:${relColor};font-weight:600;">${relationship}</span><br>`;
-  
-  // Display score
-  if (raw.score !== undefined && raw.score !== null) {
-    html += `<span class="info-key">score:</span> <span class="info-val">${Number(raw.score).toFixed(2)}</span><br>`;
-  }
-  
-  // Display all action type counts with their colors
-  const actionTypes = ['AIME', 'VOUT', 'ACHAT'];
-  let hasActions = false;
-  for (const action of actionTypes) {
-    if (raw[action] !== undefined && raw[action] !== null && Number(raw[action]) > 0) {
-      hasActions = true;
-      const actionColor = EDGE_COLORS[action] || '#888';
-      html += `<span class="info-key">${action}:</span> <span class="info-val" style="color:${actionColor};font-weight:600;">${Number(raw[action])}</span><br>`;
-    }
-  }
-  
-  // Display other fields
-  const otherFields = ['price', 'last_interaction'];
-  for (const f of otherFields) {
-    if (raw[f] !== undefined && raw[f] !== null) {
-      html += `<span class="info-key">${f}:</span> <span class="info-val">${raw[f]}</span><br>`;
-    }
-  }
-
-  const srcNode = data.nodes.find(n => n.id === src);
-  const dstNode = data.nodes.find(n => n.id === dst);
-  if (srcNode || dstNode) {
-    html += '<br>';
-    if (srcNode) {
-      html += `<span class="info-key">source type:</span> <span class="info-val">${srcNode.type || '?'}</span><br>`;
-    }
-    if (dstNode) {
-      html += `<span class="info-key">target type:</span> <span class="info-val">${dstNode.type || '?'}</span>`;
-    }
-  }
-
-  document.getElementById('info-panel').innerHTML = html;
-}
-
-function showDefaultInfo() {
-  const data = currentGraphData;
-  if (data) {
-    const nNodes = data.nodes.length;
-    const nEdges = data.links.length;
-    document.getElementById('info-panel').innerHTML = `
-      <span class="info-title">Graph loaded</span>
-      <span class="info-key">nodes:</span> <span class="info-val">${nNodes}</span><br>
-      <span class="info-key">edges:</span> <span class="info-val">${nEdges}</span><br>
-      <span style="color:#555;font-style:italic;">Click a node or edge for details.</span>
-    `;
-  } else {
-    document.getElementById('info-panel').innerHTML = '<span class="info-empty">Click a node or edge on the graph, or use the search above.</span>';
-  }
-}
-
-function showInfo(msg) {
-  document.getElementById('info-panel').innerHTML = `<span class="info-title">ℹ️</span> ${msg}`;
-}
-
-function showError(msg) {
-  hideLoading();
-  document.getElementById('info-panel').innerHTML = `<span class="info-title" style="color:#f44;">⚠️ Error</span> ${msg}`;
-}
-
-// ─── Highlight / clear ───────────────────────────────────────────────────
-function clearHighlight() {
-  if (!network) return;
-
-  const nodeUpdates = [];
-  nodesDataSet.forEach(n => {
-    nodeUpdates.push({
-      id: n.id,
-      color: { ..._baseNodeColor(n), opacity: 1.0 },
-      font: { color: '#ccc' },
-    });
-  });
-
-  const edgeUpdates = [];
-  edgesDataSet.forEach(e => {
-    const col = _baseEdgeColor(e);
-    edgeUpdates.push({
-      id: e.id,
-      color: { color: col, highlight: '#fff', hover: '#fff', opacity: 0.85 },
-    });
-  });
-
-  if (nodeUpdates.length) nodesDataSet.update(nodeUpdates);
-  if (edgeUpdates.length) edgesDataSet.update(edgeUpdates);
-}
-
-function highlightNodeNeighborhood(nodeId) {
-  if (!network) return;
-  const connectedEdges = new Set(network.getConnectedEdges(nodeId));
-  const connectedNodes = new Set(network.getConnectedNodes(nodeId));
-  connectedNodes.add(nodeId);
-
-  const nodeUpdates = [];
-  nodesDataSet.forEach(n => {
-    const active = connectedNodes.has(n.id);
-    nodeUpdates.push({
-      id: n.id,
-      color: { ..._baseNodeColor(n), opacity: active ? 1.0 : 0.15 },
-      font: { color: active ? '#ccc' : '#444' },
-    });
-  });
-
-  const edgeUpdates = [];
-  edgesDataSet.forEach(e => {
-    const active = connectedEdges.has(e.id);
-    const col = _baseEdgeColor(e);
-    edgeUpdates.push({
-      id: e.id,
-      color: { color: col, highlight: '#fff', hover: '#fff', opacity: active ? 0.85 : 0.08 },
-    });
-  });
-
-  nodesDataSet.update(nodeUpdates);
-  edgesDataSet.update(edgeUpdates);
-}
-
-function highlightEdge(edgeId) {
-  if (!network) return;
-
-  const edgeUpdates = [];
-  edgesDataSet.forEach(e => {
-    const active = e.id === edgeId;
-    const col = _baseEdgeColor(e);
-    edgeUpdates.push({
-      id: e.id,
-      color: { color: col, highlight: '#fff', hover: '#fff', opacity: active ? 0.95 : 0.08 },
-    });
-  });
-
-  const nodeUpdates = [];
-  nodesDataSet.forEach(n => {
-    nodeUpdates.push({
-      id: n.id,
-      color: { ..._baseNodeColor(n), opacity: 0.15 },
-      font: { color: '#444' },
-    });
-  });
-
-  edgesDataSet.update(edgeUpdates);
-  nodesDataSet.update(nodeUpdates);
-}
-
-// ─── Loading overlay ──────────────────────────────────────────────────────
-function showLoading(msg) {
-  const overlay = document.getElementById('loading-overlay');
-  overlay.textContent = msg || '⏳ Loading graph data…';
-  overlay.classList.remove('hidden');
-}
-
-function hideLoading() {
-  document.getElementById('loading-overlay').classList.add('hidden');
-}
-
-// ─── Init ────────────────────────────────────────────────────────────────
+// ─── 13. Init ────────────────────────────────────────────────────────────
 initNetwork();
-startStatsTimer(); // Start periodic stats fetching (immediate first fetch)
-loadBestEdges(true);
+startStatsTimer();  // fetch stats immédiatement + toutes les STATS_INTERVAL_MS secondes
+loadBestEdges();    // charge le graph au démarrage
 </script>
 </body>
 </html>
