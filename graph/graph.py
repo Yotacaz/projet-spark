@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional, Literal, Final
 import pyspark.sql.functions as F
 from pyspark.sql import DataFrame
-
+from graphframes import GraphFrame #noqa: F401
 from graph.graph_store import GraphStore
 from graph.schema import (
     edge_raw_schema,

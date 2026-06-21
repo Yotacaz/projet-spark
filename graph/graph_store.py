@@ -187,7 +187,7 @@ class GraphStore:
                     self.edges_df is None or self.vertices_df is None or self.dirty
                 ):
                     return self.edges_df, self.vertices_df
-            print(f"[DEBUG] edge len: {len(self.edges)}, vertex len: {len(self.vertices)}, dirty: {self.dirty}, force_refresh: {force_refresh}")
+            # print(f"[DEBUG] edge len: {len(self.edges)}, vertex len: {len(self.vertices)}, dirty: {self.dirty}, force_refresh: {force_refresh}")
             # build new DataFrames (potentially expensive) outside of the lock to avoid blocking readers
             new_edges_df = self._build_edges_df().persist(StorageLevel.MEMORY_AND_DISK)
             new_vertices_df = self._build_vertices_df().persist(
@@ -200,7 +200,7 @@ class GraphStore:
                 self.edges_df = new_edges_df
                 self.vertices_df = new_vertices_df
                 self.dirty = False
-                print(f"[DEBUG] new edge len after refresh: {len(self.edges)}, vertex len: {len(self.vertices)}, dirty: {self.dirty}")
+                # print(f"[DEBUG] new edge len after refresh: {len(self.edges)}, vertex len: {len(self.vertices)}, dirty: {self.dirty}")
         # Unpersist the old DataFrames after releasing the locks
         if old_edges_df is not None:
             try:
@@ -218,7 +218,7 @@ class GraphStore:
     def get_dataframes(
         self, persist: bool = False, force_refresh: bool = False
     ) -> tuple[DataFrame, DataFrame]:
-        print(f"[DEBUG] get_dataframes before any operation: edge len: {len(self.edges)}, vertex len: {len(self.vertices)}, dirty: {self.dirty}, force_refresh: {force_refresh}")
+        # print(f"[DEBUG] get_dataframes before any operation: edge len: {len(self.edges)}, vertex len: {len(self.vertices)}, dirty: {self.dirty}, force_refresh: {force_refresh}")
         # print(f"[DEBUG] get_dataframes before any operation is None: edges is None: {self.edges is None}, vertex df is None: {self.vertices is None}")
         with self._lock:
             need_refresh = (
@@ -449,7 +449,7 @@ class GraphStore:
 
         if should_checkpoint:
             self.checkpoint()
-        print(f"[DEBUG] apply_batch: number of edges in memory after batch: {len(self.edges)}, number of vertices in memory after batch: {len(self.vertices)}, dirty: {self.dirty}, epoch_id: {self.last_epoch_id}, batch_count: {self.batch_count}")
+        # print(f"[DEBUG] apply_batch: number of edges in memory after batch: {len(self.edges)}, number of vertices in memory after batch: {len(self.vertices)}, dirty: {self.dirty}, epoch_id: {self.last_epoch_id}, batch_count: {self.batch_count}")
         
 
     def flush(self) -> None:

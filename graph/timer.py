@@ -3,7 +3,7 @@ import time
 from functools import wraps
 
 # Timing configuration - set to False to disable timing logs
-ENABLE_TIMING = True
+ENABLE_TIMING = False 
 
 T = TypeVar("T")
 
