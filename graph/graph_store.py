@@ -15,6 +15,7 @@ from config import EDGES_PATH, VERTICES_PATH, EDGES_RAW_PATH, VERTICES_RAW_PATH
 
 spark = get_spark_session()
 
+
 @dataclass
 class _EdgeState:
     counts: dict[str, int] = field(default_factory=lambda: {et: 0 for et in EVENT_TYPE})
@@ -27,12 +28,21 @@ class _VertexState:
     type: Optional[str] = None
     epoch_id: int = -1
 
+
 class GraphStore:
     """
     État applicatif du graphe.
     - mise à jour en mémoire
     - checkpoint complet sur disque
     - reload depuis snapshot + replay raw après checkpoint
+
+    Thread-safety :
+      _lock         : RLock protégeant les dicts edges/vertices et les métadonnées
+                      (batch_count, last_epoch_id, dirty, edges_df, vertices_df).
+      _refresh_lock : Lock non-réentrant garantissant qu'un seul rebuild de
+                      DataFrames tourne à la fois et réalisant un swap atomique
+                      (build → swap → clear dirty) sans jamais exposer None aux
+                      threads lecteurs.
     """
 
     def __init__(self, checkpoint_dir: str) -> None:
@@ -48,14 +58,20 @@ class GraphStore:
         self.batch_count: int = 0
         self.last_epoch_id: int = -1
         self.dirty: bool = False
-        
-        # Reentrant lock to protect concurrent access to edges and vertices dictionaries
-        # and allow nested locking within the same thread (e.g., apply_batch -> checkpoint -> get_dataframes)
+
+        # RLock : permet la réentrance intra-thread (apply_batch → checkpoint → get_dataframes)
         self._lock = threading.RLock()
+        self._refresh_lock = threading.Lock()
+
+    # ------------------------------------------------------------------
+    # Cache management
+    # ------------------------------------------------------------------
 
     def invalidate_cache(self) -> None:
-        # Unpersisting DataFrames doesn't require the lock, but clearing the references does
-        # to prevent race conditions with concurrent refresh_dataframes calls
+        """
+        Force the next get_dataframes() to rebuild the DataFrames.
+        Used only by load_checkpoint(); does not set the DFs to None in a visible way to readers (refresh_dataframes does an atomic swap).
+        """
         with self._lock:
             if self.edges_df is not None:
                 try:
@@ -70,6 +86,11 @@ class GraphStore:
                 except Exception:
                     pass
                 self.vertices_df = None
+            self.dirty = True
+
+    # ------------------------------------------------------------------
+    # In-memory state mutations
+    # ------------------------------------------------------------------
 
     def _recompute_edge_score(self, st: _EdgeState) -> None:
         st.score = float(
@@ -81,6 +102,7 @@ class GraphStore:
 
     def _update_edge(self, src: str, dst: str, rel: str, ts) -> None:
         if rel not in RELATIONSHIP_SCORES:
+            print(f"Warning: unknown relationship type '{rel}' encountered. Ignoring.")
             return
 
         with self._lock:
@@ -92,7 +114,9 @@ class GraphStore:
 
             st.counts[rel] = int(st.counts.get(rel, 0)) + 1
 
-            if ts is not None and (st.last_interaction is None or ts > st.last_interaction):
+            if ts is not None and (
+                st.last_interaction is None or ts > st.last_interaction
+            ):
                 st.last_interaction = ts
 
             self._recompute_edge_score(st)
@@ -108,54 +132,90 @@ class GraphStore:
                 st.type = vtype
                 st.epoch_id = epoch
 
+    # ------------------------------------------------------------------
+    # DataFrame builders
+    # ------------------------------------------------------------------
+
     def _build_edges_df(self) -> DataFrame:
         with self._lock:
-            edges_snapshot = list(self.edges.items())
-        
-        rows = []
-        for (src, dst), st in edges_snapshot:
-            row = {
-                "src": src,
-                "dst": dst,
-                "score": float(st.score),
-                "last_interaction": st.last_interaction,
-            }
-            row.update({et: int(st.counts.get(et, 0)) for et in EVENT_TYPE})
-            rows.append(row)
+            rows = [
+                Row(
+                    src=src,
+                    dst=dst,
+                    score=float(st.score),
+                    last_interaction=st.last_interaction,
+                    **{et: int(st.counts.get(et, 0)) for et in EVENT_TYPE},
+                )
+                for (src, dst), st in self.edges.items()
+            ]
 
         if not rows:
+            print("Warning: No edges to create DataFrame from.")
             return spark.createDataFrame([], schema=edges_schema())
 
         return spark.createDataFrame(rows, schema=edges_schema())
 
     def _build_vertices_df(self) -> DataFrame:
         with self._lock:
-            vertices_snapshot = list(self.vertices.items())
-        
-        rows = [
-            Row(id=vid, type=st.type)
-            for vid, st in vertices_snapshot
-        ]
+            rows = [Row(id=vid, type=st.type) for vid, st in self.vertices.items()]
 
         if not rows:
+            print("Warning: No vertices to create DataFrame from.")
             return spark.createDataFrame([], schema=vertices_schema())
-        
+
         return spark.createDataFrame(rows, schema=vertices_schema())
 
+    # ------------------------------------------------------------------
+    # DataFrame refresh (swap atomique)
+    # ------------------------------------------------------------------
+
     def refresh_dataframes(self) -> tuple[DataFrame, DataFrame]:
-        # invalidate_cache already acquires the lock, so we need to be careful
-        # We'll let invalidate_cache handle its own locking
-        self.invalidate_cache()
-        # _build_edges_df and _build_vertices_df acquire the lock internally
-        self.edges_df = self._build_edges_df().persist(StorageLevel.MEMORY_AND_DISK)
-        self.vertices_df = self._build_vertices_df().persist(StorageLevel.MEMORY_AND_DISK)
+        """
+        Reconstruit les DataFrames depuis l'état en mémoire.
+        """
+        old_edges_df: Optional[DataFrame] = None
+        old_vertices_df: Optional[DataFrame] = None
+
+        with self._refresh_lock:
+            # double-check locking if another thread has already rebuilt the DataFrames
+            with self._lock:
+                if not (
+                    self.edges_df is None or self.vertices_df is None or self.dirty
+                ):
+                    return self.edges_df, self.vertices_df
+
+            # build new DataFrames (potentially expensive) outside of the lock to avoid blocking readers
+            new_edges_df = self._build_edges_df().persist(StorageLevel.MEMORY_AND_DISK)
+            new_vertices_df = self._build_vertices_df().persist(
+                StorageLevel.MEMORY_AND_DISK
+            )
+
+            with self._lock:
+                old_edges_df = self.edges_df
+                old_vertices_df = self.vertices_df
+                self.edges_df = new_edges_df
+                self.vertices_df = new_vertices_df
+                self.dirty = False
+        # Unpersist the old DataFrames after releasing the locks
+        if old_edges_df is not None:
+            try:
+                old_edges_df.unpersist()
+            except Exception:
+                pass
+        if old_vertices_df is not None:
+            try:
+                old_vertices_df.unpersist()
+            except Exception:
+                pass
+
         return self.edges_df, self.vertices_df
 
     def get_dataframes(self, persist: bool = False) -> tuple[DataFrame, DataFrame]:
-        # Check if we need to refresh - use lock to get consistent view
         with self._lock:
-            need_refresh = self.edges_df is None or self.vertices_df is None
-        
+            need_refresh = (
+                self.edges_df is None or self.vertices_df is None or self.dirty
+            )
+
         if need_refresh:
             self.refresh_dataframes()
 
@@ -163,12 +223,14 @@ class GraphStore:
         assert self.vertices_df is not None
 
         if persist:
-            # Note: persist() is a Spark operation that doesn't modify our dictionaries
-            # so we don't need the lock here
             self.edges_df = self.edges_df.persist(StorageLevel.MEMORY_AND_DISK)
             self.vertices_df = self.vertices_df.persist(StorageLevel.MEMORY_AND_DISK)
 
         return self.edges_df, self.vertices_df
+
+    # ------------------------------------------------------------------
+    # Checkpoint (persistence Delta)
+    # ------------------------------------------------------------------
 
     def checkpoint(self) -> None:
         edges_df, vertices_df = self.get_dataframes(persist=False)
@@ -185,7 +247,7 @@ class GraphStore:
         with self._lock:
             batch_count = self.batch_count
             last_epoch_id = self.last_epoch_id
-        
+
         meta_path.write_text(
             json.dumps(
                 {
@@ -196,8 +258,9 @@ class GraphStore:
             )
         )
 
-        with self._lock:
-            self.dirty = False
+    # ------------------------------------------------------------------
+    # Snapshot + replay (load from disk)
+    # ------------------------------------------------------------------
 
     def _load_snapshot_tables(self) -> bool:
         loaded_any = False
@@ -233,14 +296,15 @@ class GraphStore:
 
     def _replay_raw_since_checkpoint(self, last_epoch_id: int) -> None:
         if SAVE_RAW_DATA and DeltaTable.isDeltaTable(spark, EDGES_RAW_PATH):
-            raw_edges = spark.read.format("delta").load(EDGES_RAW_PATH).dropDuplicates(
-                ["src", "dst", "relationship", "timestamp", "epoch_id"]
+            raw_edges = (
+                spark.read.format("delta")
+                .load(EDGES_RAW_PATH)
+                .dropDuplicates(["src", "dst", "relationship", "timestamp", "epoch_id"])
             )
             if last_epoch_id >= 0:
                 raw_edges = raw_edges.filter(F.col("epoch_id") > F.lit(last_epoch_id))
 
             for r in raw_edges.toLocalIterator():
-                # _update_edge acquires the lock internally
                 self._update_edge(
                     src=r["src"],
                     dst=r["dst"],
@@ -249,14 +313,17 @@ class GraphStore:
                 )
 
         if SAVE_RAW_DATA and DeltaTable.isDeltaTable(spark, VERTICES_RAW_PATH):
-            raw_vertices = spark.read.format("delta").load(VERTICES_RAW_PATH).dropDuplicates(
-                ["id", "type", "epoch_id"]
+            raw_vertices = (
+                spark.read.format("delta")
+                .load(VERTICES_RAW_PATH)
+                .dropDuplicates(["id", "type", "epoch_id"])
             )
             if last_epoch_id >= 0:
-                raw_vertices = raw_vertices.filter(F.col("epoch_id") > F.lit(last_epoch_id))
+                raw_vertices = raw_vertices.filter(
+                    F.col("epoch_id") > F.lit(last_epoch_id)
+                )
 
             for r in raw_vertices.toLocalIterator():
-                # _update_vertex acquires the lock internally
                 self._update_vertex(
                     vid=r["id"],
                     vtype=r["type"],
@@ -265,7 +332,7 @@ class GraphStore:
 
     def load_checkpoint(self) -> None:
         with self._lock:
-            self.invalidate_cache()
+            self.invalidate_cache()  # met dirty=True, dfs=None
             self.edges.clear()
             self.vertices.clear()
             self.batch_count = 0
@@ -290,9 +357,12 @@ class GraphStore:
         elif SAVE_RAW_DATA:
             self._replay_raw_since_checkpoint(-1)
 
+        # refresh_dataframes remet dirty=False après le swap
         self.refresh_dataframes()
-        with self._lock:
-            self.dirty = False
+
+    # ------------------------------------------------------------------
+    # Micro-batch application
+    # ------------------------------------------------------------------
 
     def apply_batch(
         self,
@@ -309,22 +379,25 @@ class GraphStore:
         - checkpoint périodique
         """
 
-        # Check epoch_id first to avoid unnecessary work
         with self._lock:
             if epoch_id <= self.last_epoch_id:
                 return
 
-        # Save raw data (doesn't modify our dictionaries)
+        # Sauvegarde optionnelle des données brutes (hors lock)
         if SAVE_RAW_DATA:
             if new_edges_df is not None and not _is_empty(new_edges_df):
                 _append_raw_delta(new_edges_df, EDGES_RAW_PATH, epoch_id, kind="edge")
 
             if new_vertices_df is not None and not _is_empty(new_vertices_df):
-                _append_raw_delta(new_vertices_df, VERTICES_RAW_PATH, epoch_id, kind="vertex")
+                _append_raw_delta(
+                    new_vertices_df, VERTICES_RAW_PATH, epoch_id, kind="vertex"
+                )
 
-        # Update edges - _update_edge acquires the lock internally
+        # Mise à jour des arêtes
         if new_edges_df is not None and not _is_empty(new_edges_df):
-            for r in new_edges_df.select("src", "dst", "relationship", "timestamp").toLocalIterator():
+            for r in new_edges_df.select(
+                "src", "dst", "relationship", "timestamp"
+            ).toLocalIterator():
                 self._update_edge(
                     src=r["src"],
                     dst=r["dst"],
@@ -332,7 +405,7 @@ class GraphStore:
                     ts=r["timestamp"],
                 )
 
-        # Update vertices - _update_vertex acquires the lock internally
+        # Mise à jour des sommets
         if new_vertices_df is not None and not _is_empty(new_vertices_df):
             prepared_vertices = new_vertices_df
             if "epoch_id" in prepared_vertices.columns:
@@ -349,18 +422,23 @@ class GraphStore:
                     epoch=int(r["epoch_id"]),
                 )
 
-        # Update metadata and refresh
+        # Mise à jour des métadonnées et signal de rebuild
         with self._lock:
             self.last_epoch_id = epoch_id
             self.batch_count += 1
-            self.dirty = True
-        
+            self.dirty = True  # positionné APRÈS toutes les mutations de dicts
+
+        # Rebuild les DataFrames (remet dirty=False via swap atomique)
         self.refresh_dataframes()
 
-        # Checkpoint if needed
         with self._lock:
-            if checkpoint_every_n_batches > 0 and self.batch_count % checkpoint_every_n_batches == 0:
-                self.checkpoint()
+            should_checkpoint = (
+                checkpoint_every_n_batches > 0
+                and self.batch_count % checkpoint_every_n_batches == 0
+            )
+
+        if should_checkpoint:
+            self.checkpoint()
 
     def flush(self) -> None:
         with self._lock:

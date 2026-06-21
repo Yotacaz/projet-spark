@@ -359,7 +359,6 @@ input::placeholder { color: #555; }
           <select id="node-hops">
             <option value="1" selected>1 (direct)</option>
             <option value="2">2</option>
-            <option value="3">3</option>
           </select>
         </div>
         <div>
@@ -393,7 +392,6 @@ input::placeholder { color: #555; }
           <select id="edge-hops">
             <option value="1" selected>1</option>
             <option value="2">2</option>
-            <option value="3">3</option>
           </select>
         </div>
         <div>
@@ -852,7 +850,6 @@ function _setCurrentView(mode, params) {
 }
 
 function _getAutoRefreshInterval() {
-  // FIX: was parseInt(..., 15) — base 15 inflated every interval by 5–15x
   return parseInt(document.getElementById('auto-refresh-interval').value, 10);
 }
 

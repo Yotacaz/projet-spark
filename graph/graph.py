@@ -54,13 +54,13 @@ def get_edges_and_vertices(
     persist: bool = False,
 ) -> tuple[DataFrame, DataFrame]:
     if force_reload:
-        GRAPH.load_checkpoint()
+        GRAPH.refresh_dataframes()
     return GRAPH.get_dataframes(persist=persist)
 
 
 @timed
 def refresh_edges_and_vertices() -> tuple[DataFrame, DataFrame]:
-    GRAPH.load_checkpoint()
+    GRAPH.refresh_dataframes()
     return GRAPH.get_dataframes(persist=False)
 
 

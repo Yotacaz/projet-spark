@@ -156,7 +156,6 @@ def api_stats():
     # Force refresh of DataFrames to get the latest state
     # We don't need force_reload=True (which reloads from disk checkpoint)
     # but we want to ensure DataFrames are up-to-date with in-memory state
-    GRAPH.invalidate_cache()
     edges_df, vertices_df = get_edges_and_vertices(force_reload=False)
     vertices_count = vertices_df.count()
     edges_count = edges_df.count()
@@ -176,7 +175,7 @@ def api_stats():
 @app.route("/api/refresh")
 def api_refresh():
     cache.cache.clear()
-    GRAPH.load_checkpoint()   # recharge l'état réel depuis le snapshot/raw
+    GRAPH.refresh_dataframes()   # recharge l'état réel depuis le snapshot/raw
     return jsonify(
         {
             "status": "success",
