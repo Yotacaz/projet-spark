@@ -25,6 +25,7 @@ cleanup() {
 trap cleanup SIGINT SIGTERM
 
 source .venv/bin/activate
+uv sync --upgrade
 set -e
 
 COMPOSE_FILE="docker-compose.yml"

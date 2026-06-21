@@ -19,11 +19,14 @@ Commencez par installer les dépendances avec `uv` :
 uv sync --upgrade
 ```
 
-lancer l'application dans un seul terminal (pour linux):
+**lancer l'application à partir du script** (un seul terminal, pour linux):
 ```bash
 bash start.sh
 ```
-
+*nb certains messages pourraient être mélangés à cause de l'exécution simultanée de plusieurs processus*
+<br>
+<br>
+**ou lancer les composants séparément** (plusieurs terminaux):
 ```bash
 # uv (instalation des dépendances):
 uv sync --upgrade
@@ -38,9 +41,9 @@ docker-compose up
 # 2. Lancer le simulateur
 python3 simulateur/simulateur.py
 
-# 3. Lancer spark_streaming
-python3 spark_streaming/spark_streaming.py
-
+# 3. Lancer le streaming et l'application web (dashboard)
+python3 main.py
+```
 
 ## Schéma des événements
 
@@ -57,7 +60,7 @@ python3 spark_streaming/spark_streaming.py
 }
 ```
 
-## Schéma PySpark (à utiliser dans `spark_streaming/`)
+## Schéma PySpark
 
 ```python
 from pyspark.sql.types import *
