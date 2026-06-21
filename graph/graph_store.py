@@ -150,7 +150,7 @@ class GraphStore:
             ]
 
         if not rows:
-            print("Warning: No edges to create DataFrame from.")
+            print(f"Warning: No edges to create DataFrame from. empty :{rows==[]}, none :{rows is None}, edges dict: {self.edges}")
             return spark.createDataFrame([], schema=edges_schema())
 
         return spark.createDataFrame(rows, schema=edges_schema())
@@ -160,7 +160,7 @@ class GraphStore:
             rows = [Row(id=vid, type=st.type) for vid, st in self.vertices.items()]
 
         if not rows:
-            print("Warning: No vertices to create DataFrame from.")
+            print(f"Warning: No vertices to create DataFrame from. empty :{rows==[]}, none :{rows is None}, vertices dict: {self.vertices}")
             return spark.createDataFrame([], schema=vertices_schema())
 
         return spark.createDataFrame(rows, schema=vertices_schema())
@@ -169,9 +169,13 @@ class GraphStore:
     # DataFrame refresh (swap atomique)
     # ------------------------------------------------------------------
 
-    def refresh_dataframes(self) -> tuple[DataFrame, DataFrame]:
+    def refresh_dataframes(self, force_refresh: bool = False) -> tuple[DataFrame, DataFrame]:
         """
         Reconstruit les DataFrames depuis l'état en mémoire.
+
+        Quand force_refresh=True, on reconstruit même si le cache DataFrame
+        semble déjà à jour. Cela sert pour les chemins de reload qui veulent
+        ignorer un cache potentiellement périmé, sans relire le checkpoint disque.
         """
         old_edges_df: Optional[DataFrame] = None
         old_vertices_df: Optional[DataFrame] = None
@@ -179,11 +183,11 @@ class GraphStore:
         with self._refresh_lock:
             # double-check locking if another thread has already rebuilt the DataFrames
             with self._lock:
-                if not (
+                if not force_refresh and not (
                     self.edges_df is None or self.vertices_df is None or self.dirty
                 ):
                     return self.edges_df, self.vertices_df
-
+            print(f"[DEBUG] edge len: {len(self.edges)}, vertex len: {len(self.vertices)}, dirty: {self.dirty}, force_refresh: {force_refresh}")
             # build new DataFrames (potentially expensive) outside of the lock to avoid blocking readers
             new_edges_df = self._build_edges_df().persist(StorageLevel.MEMORY_AND_DISK)
             new_vertices_df = self._build_vertices_df().persist(
@@ -196,6 +200,7 @@ class GraphStore:
                 self.edges_df = new_edges_df
                 self.vertices_df = new_vertices_df
                 self.dirty = False
+                print(f"[DEBUG] new edge len after refresh: {len(self.edges)}, vertex len: {len(self.vertices)}, dirty: {self.dirty}")
         # Unpersist the old DataFrames after releasing the locks
         if old_edges_df is not None:
             try:
@@ -210,14 +215,18 @@ class GraphStore:
 
         return self.edges_df, self.vertices_df
 
-    def get_dataframes(self, persist: bool = False) -> tuple[DataFrame, DataFrame]:
+    def get_dataframes(
+        self, persist: bool = False, force_refresh: bool = False
+    ) -> tuple[DataFrame, DataFrame]:
+        print(f"[DEBUG] get_dataframes before any operation: edge len: {len(self.edges)}, vertex len: {len(self.vertices)}, dirty: {self.dirty}, force_refresh: {force_refresh}")
+        # print(f"[DEBUG] get_dataframes before any operation is None: edges is None: {self.edges is None}, vertex df is None: {self.vertices is None}")
         with self._lock:
             need_refresh = (
                 self.edges_df is None or self.vertices_df is None or self.dirty
             )
 
-        if need_refresh:
-            self.refresh_dataframes()
+        if force_refresh or need_refresh:
+            self.refresh_dataframes(force_refresh=force_refresh)
 
         assert self.edges_df is not None
         assert self.vertices_df is not None
@@ -225,7 +234,8 @@ class GraphStore:
         if persist:
             self.edges_df = self.edges_df.persist(StorageLevel.MEMORY_AND_DISK)
             self.vertices_df = self.vertices_df.persist(StorageLevel.MEMORY_AND_DISK)
-
+        # print(f"[DEBUG] get_dataframes: edge len: {len(self.edges)}, vertex len: {len(self.vertices)}, dirty: {self.dirty}, force_refresh: {force_refresh}")
+        # print(f"[DEBUG] get_dataframes: edge len in df: {self.edges_df.count()}, vertex len in df: {self.vertices_df.count()}")
         return self.edges_df, self.vertices_df
 
     # ------------------------------------------------------------------
@@ -333,8 +343,8 @@ class GraphStore:
     def load_checkpoint(self) -> None:
         with self._lock:
             self.invalidate_cache()  # met dirty=True, dfs=None
-            self.edges.clear()
-            self.vertices.clear()
+            # self.edges.clear()
+            # self.vertices.clear()
             self.batch_count = 0
             self.last_epoch_id = -1
 
@@ -358,7 +368,7 @@ class GraphStore:
             self._replay_raw_since_checkpoint(-1)
 
         # refresh_dataframes remet dirty=False après le swap
-        self.refresh_dataframes()
+        self.refresh_dataframes(force_refresh=True)
 
     # ------------------------------------------------------------------
     # Micro-batch application
@@ -378,12 +388,11 @@ class GraphStore:
         - refresh des DataFrames de service
         - checkpoint périodique
         """
+        # print(f"[DEBUG] number of new edges: {new_edges_df.count() if new_edges_df is not None else 0}, number of new vertices: {new_vertices_df.count() if new_vertices_df is not None else 0}, epoch_id: {epoch_id}")
+        # print(f"[DEBUG] number of edges in memory: {len(self.edges)}, number of vertices in memory: {len(self.vertices)}")
 
-        with self._lock:
-            if epoch_id <= self.last_epoch_id:
-                return
 
-        # Sauvegarde optionnelle des données brutes (hors lock)
+        # Save raw data to Delta tables if enabled
         if SAVE_RAW_DATA:
             if new_edges_df is not None and not _is_empty(new_edges_df):
                 _append_raw_delta(new_edges_df, EDGES_RAW_PATH, epoch_id, kind="edge")
@@ -404,6 +413,7 @@ class GraphStore:
                     rel=r["relationship"],
                     ts=r["timestamp"],
                 )
+                # print(f"[DEBUG] updated edge: src={r['src']}, dst={r['dst']}, rel={r['relationship']}, ts={r['timestamp']}")
 
         # Mise à jour des sommets
         if new_vertices_df is not None and not _is_empty(new_vertices_df):
@@ -429,7 +439,7 @@ class GraphStore:
             self.dirty = True  # positionné APRÈS toutes les mutations de dicts
 
         # Rebuild les DataFrames (remet dirty=False via swap atomique)
-        self.refresh_dataframes()
+        self.refresh_dataframes(force_refresh=True)
 
         with self._lock:
             should_checkpoint = (
@@ -439,6 +449,8 @@ class GraphStore:
 
         if should_checkpoint:
             self.checkpoint()
+        print(f"[DEBUG] apply_batch: number of edges in memory after batch: {len(self.edges)}, number of vertices in memory after batch: {len(self.vertices)}, dirty: {self.dirty}, epoch_id: {self.last_epoch_id}, batch_count: {self.batch_count}")
+        
 
     def flush(self) -> None:
         with self._lock:

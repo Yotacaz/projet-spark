@@ -85,14 +85,8 @@ echo "Lancement des scripts Python..."
 echo "lancement du main.py... (5 secondes d'attente après le lancement pour laisser le temps à spark de démarrer)"
 python3 main.py &
 MAIN_PID=$!
+
 sleep 5
-
-echo "lancement du app.py..."
-python3 app.py &
-APP_PID=$!
-
-
-sleep 1
 
 echo "lancement du simulateur/simulateur.py..."
 python3 simulateur/simulateur.py

@@ -31,8 +31,8 @@ GRAPH = GraphStore(GRAPH_CHECKPOINT_DIR)
 
 def initialize_graph_storage(load_from_checkpoint: bool = True) -> None:
     """
-    À appeler au démarrage du process.
-    Crée les tables Delta si besoin puis recharge l'état si demandé.
+    To call only once at the beginning of the application.
+    Create the necessary Delta tables and load data from checkpoint if specified.
     """
     _ensure_delta_table(EDGES_RAW_PATH, edge_raw_schema())
     _ensure_delta_table(VERTICES_RAW_PATH, vertex_raw_schema())
@@ -42,26 +42,19 @@ def initialize_graph_storage(load_from_checkpoint: bool = True) -> None:
     if load_from_checkpoint:
         GRAPH.load_checkpoint()
     else:
-        GRAPH.refresh_dataframes()
-
-
-def invalidate_graph_cache() -> None:
-    GRAPH.invalidate_cache()
+        GRAPH.refresh_dataframes(force_refresh=True)
 
 
 def get_edges_and_vertices(
     force_reload: bool = False,
     persist: bool = False,
 ) -> tuple[DataFrame, DataFrame]:
-    if force_reload:
-        GRAPH.refresh_dataframes()
-    return GRAPH.get_dataframes(persist=persist)
+    return GRAPH.get_dataframes(persist=persist, force_refresh=force_reload)
 
 
 @timed
 def refresh_edges_and_vertices() -> tuple[DataFrame, DataFrame]:
-    GRAPH.refresh_dataframes()
-    return GRAPH.get_dataframes(persist=False)
+    return GRAPH.refresh_dataframes(force_refresh=True)
 
 
 @timed

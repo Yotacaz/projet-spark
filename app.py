@@ -9,9 +9,10 @@ from graph.graph import (
     get_best_edges,
     get_edges_and_vertices,
     to_obj,
+    initialize_graph_storage,
     GRAPH
 )
- 
+
 app = Flask(__name__)
 
 # Simple in-memory cache without external dependencies
@@ -36,7 +37,7 @@ def cached_endpoint(f):
     def decorated(*args, **kwargs):
         # Pour les endpoints qui doivent refléter l'état courant du graphe,
         # on bypass complètement le cache.
-        if request.endpoint in {"api_best_edges", "api_node_neighbors", "api_edge_context", "api_stats"}:
+        if request.endpoint in {"api_best_edges", "api_node_neighbors", "api_edge_context", "api_stats", "api_search_nodes"}:
             return f(*args, **kwargs)
 
         cache_key = f"{f.__name__}:{request.path}?{request.query_string.decode()}"
@@ -137,7 +138,7 @@ def api_edge_context():
 @app.route("/api/search")
 @cached_endpoint
 def api_search_nodes():
-    edges_df, vertices_df = get_edges_and_vertices(force_reload=_force_reload())
+    _, vertices_df = get_edges_and_vertices(force_reload=_force_reload())
     q = request.args.get("q", "").strip().lower()
     if not q:
         return jsonify([])
@@ -175,7 +176,7 @@ def api_stats():
 @app.route("/api/refresh")
 def api_refresh():
     cache.cache.clear()
-    GRAPH.refresh_dataframes()   # recharge l'état réel depuis le snapshot/raw
+    GRAPH.refresh_dataframes(force_refresh=True)   # reconstruit les DataFrames depuis l'état mémoire courant
     return jsonify(
         {
             "status": "success",
@@ -198,4 +199,5 @@ def static_files(filename):
 
 
 if __name__ == "__main__":
+    initialize_graph_storage(load_from_checkpoint=True)
     app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
